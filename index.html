@@ -18,6 +18,8 @@
     .tiny { font-size:12px; color:#666; margin-top:8px; }
     .ok { color:#0a7a2f; }
     .bad { color:#b00020; }
+    .checkbox { display:flex; align-items:center; gap:10px; margin-top: 10px; }
+    .checkbox input { width:auto; }
   </style>
 </head>
 <body>
@@ -47,19 +49,48 @@
     <label>Notes (optional)</label>
     <textarea id="notes" placeholder="Damage, gas level, issues, etc."></textarea>
 
+    <div class="checkbox">
+      <input type="checkbox" id="has_incident" />
+      <label for="has_incident" style="margin:0;">Report incident / damage</label>
+    </div>
+
+    <div id="incidentFields" style="display:none;">
+      <label>Incident type</label>
+      <select id="incident_type">
+        <option value="damage">Damage</option>
+        <option value="accident">Accident</option>
+        <option value="theft">Theft</option>
+        <option value="other">Other</option>
+      </select>
+
+      <label>Severity (optional)</label>
+      <select id="severity">
+        <option value="">(optional)</option>
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+      </select>
+
+      <label>Description</label>
+      <textarea id="incident_description" placeholder="What happened? Where? Any details."></textarea>
+
+      <label>Location (optional)</label>
+      <input id="incident_location" type="text" placeholder="e.g. Brian Head, UT / parking lot" />
+
+      <label>Police report # (optional)</label>
+      <input id="police_report_number" type="text" placeholder="If applicable" />
+    </div>
+
     <div style="height:12px"></div>
     <button class="primary" id="submitBtn">Submit</button>
 
     <p class="tiny" id="status"></p>
-    <p class="tiny">Scan QR → submit checkout/return. Photos auto-delete after 30 days (via purge job).</p>
   </div>
 
 <script>
-  // ==== CONFIG ====
-  const SUPABASE_URL = "https://zdspapaigdywpbfwwzfb.supabase.co";
+  const SUPABASE_URL = "https://YOUR_PROJECT_REF.supabase.co";
   const EDGE_SUBMIT_URL = SUPABASE_URL.replace(/\/$/, "") + "/functions/v1/vehicle_log_submit";
 
-  // QR query params: ?vehicle_id=...&k=...
   const qs = new URLSearchParams(location.search);
   const vehicle_id = qs.get("vehicle_id") || "";
   const k = qs.get("k") || "";
@@ -76,6 +107,12 @@
     setStatus("Missing vehicle_id or key in the URL. Use the QR code in the car.", "bad");
     submitBtn.disabled = true;
   }
+
+  const hasIncident = document.getElementById("has_incident");
+  const incidentFields = document.getElementById("incidentFields");
+  hasIncident.addEventListener("change", () => {
+    incidentFields.style.display = hasIncident.checked ? "block" : "none";
+  });
 
   submitBtn.addEventListener("click", async () => {
     try {
@@ -103,18 +140,40 @@
       form.append("k", k);
       files.forEach((f) => form.append("photos", f, f.name));
 
+      // Incident fields
+      if (hasIncident.checked) {
+        const incident_type = document.getElementById("incident_type").value;
+        const severity = document.getElementById("severity").value;
+        const desc = document.getElementById("incident_description").value.trim();
+        const loc = document.getElementById("incident_location").value.trim();
+        const prn = document.getElementById("police_report_number").value.trim();
+
+        if (!desc) throw new Error("Incident description is required.");
+
+        form.append("incident_type", incident_type);
+        if (severity) form.append("severity", severity);
+        form.append("incident_description", desc);
+        if (loc) form.append("incident_location", loc);
+        if (prn) form.append("police_report_number", prn);
+      }
+
       const resp = await fetch(EDGE_SUBMIT_URL, { method: "POST", body: form });
       const data = await resp.json().catch(() => ({}));
 
-      if (!resp.ok) {
-        throw new Error(data?.error || `Submit failed (${resp.status})`);
-      }
+      if (!resp.ok) throw new Error(data?.error || `Submit failed (${resp.status})`);
 
       setStatus(`Saved ✅ Log ID: ${data.log_id}`, "ok");
       document.getElementById("mileage").value = "";
       document.getElementById("employee_name").value = "";
       document.getElementById("notes").value = "";
       photosInput.value = "";
+      hasIncident.checked = false;
+      incidentFields.style.display = "none";
+      document.getElementById("incident_description").value = "";
+      document.getElementById("incident_location").value = "";
+      document.getElementById("police_report_number").value = "";
+      document.getElementById("severity").value = "";
+      document.getElementById("incident_type").value = "damage";
     } catch (e) {
       setStatus(e.message || "Something broke. Try again.", "bad");
     } finally {
