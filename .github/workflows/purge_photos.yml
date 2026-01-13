@@ -1,0 +1,17 @@
+name: Purge vehicle photos
+
+on:
+  schedule:
+    - cron: "15 10 * * *" # daily ~2:15am Pacific (UTC-based)
+  workflow_dispatch:
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Supabase purge function
+        run: |
+          curl -sS -X POST "${{ secrets.SUPABASE_PURGE_URL }}" \
+            -H "x-purge-key: ${{ secrets.SUPABASE_PURGE_KEY }}" \
+            -H "content-type: application/json" \
+            -d "{}"
