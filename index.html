@@ -1,1 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Nudge Fleet Vehicle Log</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin:0; padding:18px; background:#f6f6f6; }
+    .card { max-width:560px; margin:0 auto; background:#fff; border-radius:14px; padding:16px; box-shadow:0 2px 10px rgba(0,0,0,.08); }
+    h1 { font-size:18px; margin:0 0 12px; }
+    label { display:block; font-size:13px; margin:10px 0 6px; color:#333; }
+    input, select, textarea, button { width:100%; padding:12px; font-size:16px; border:1px solid #ddd; border-radius:10px; box-sizing:border-box; }
+    textarea { min-height:80px; }
+    .row { display:flex; gap:10px; }
+    .row > div { flex:1; }
+    button { border:0; cursor:pointer; }
+    .primary { background:#111; color:#fff; font-weight:650; }
+    .tiny { font-size:12px; color:#666; margin-top:8px; }
+    .ok { color:#0a7a2f; }
+    .bad { color:#b00020; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Business Vehicle Log</h1>
 
+    <div class="row">
+      <div>
+        <label>Action</label>
+        <select id="log_type">
+          <option value="checkout">Check-out</option>
+          <option value="return">Return</option>
+        </select>
+      </div>
+      <div>
+        <label>Mileage</label>
+        <input id="mileage" type="number" min="0" inputmode="numeric" placeholder="e.g. 43122" required />
+      </div>
+    </div>
+
+    <label>Your name</label>
+    <input id="employee_name" type="text" placeholder="First + last" required />
+
+    <label>Photos (odometer required)</label>
+    <input id="photos" type="file" accept="image/*" capture="environment" multiple />
+
+    <label>Notes (optional)</label>
+    <textarea id="notes" placeholder="Damage, gas level, issues, etc."></textarea>
+
+    <div style="height:12px"></div>
+    <button class="primary" id="submitBtn">Submit</button>
+
+    <p class="tiny" id="status"></p>
+    <p class="tiny">Scan QR → submit checkout/return. Photos auto-delete after 30 days (via purge job).</p>
+  </div>
+
+<script>
+  // ==== CONFIG ====
+  const SUPABASE_URL = "https://YOUR_PROJECT_REF.supabase.co";
+  const EDGE_SUBMIT_URL = SUPABASE_URL.replace(/\/$/, "") + "/functions/v1/vehicle_log_submit";
+
+  // QR query params: ?vehicle_id=...&k=...
+  const qs = new URLSearchParams(location.search);
+  const vehicle_id = qs.get("vehicle_id") || "";
+  const k = qs.get("k") || "";
+
+  const statusEl = document.getElementById("status");
+  const submitBtn = document.getElementById("submitBtn");
+
+  function setStatus(msg, cls="") {
+    statusEl.className = "tiny " + cls;
+    statusEl.textContent = msg;
+  }
+
+  if (!vehicle_id || !k) {
+    setStatus("Missing vehicle_id or key in the URL. Use the QR code in the car.", "bad");
+    submitBtn.disabled = true;
+  }
+
+  submitBtn.addEventListener("click", async () => {
+    try {
+      submitBtn.disabled = true;
+      setStatus("Uploading…", "");
+
+      const log_type = document.getElementById("log_type").value;
+      const mileage = document.getElementById("mileage").value;
+      const employee_name = document.getElementById("employee_name").value.trim();
+      const notes = document.getElementById("notes").value.trim();
+      const photosInput = document.getElementById("photos");
+
+      if (!employee_name) throw new Error("Name is required.");
+      if (mileage === "" || Number(mileage) < 0) throw new Error("Mileage must be a non-negative number.");
+
+      const files = Array.from(photosInput.files || []);
+      if (files.length < 1) throw new Error("At least 1 photo required (odometer).");
+
+      const form = new FormData();
+      form.append("vehicle_id", vehicle_id);
+      form.append("log_type", log_type);
+      form.append("employee_name", employee_name);
+      form.append("mileage", mileage);
+      form.append("notes", notes);
+      form.append("k", k);
+      files.forEach((f) => form.append("photos", f, f.name));
+
+      const resp = await fetch(EDGE_SUBMIT_URL, { method: "POST", body: form });
+      const data = await resp.json().catch(() => ({}));
+
+      if (!resp.ok) {
+        throw new Error(data?.error || `Submit failed (${resp.status})`);
+      }
+
+      setStatus(`Saved ✅ Log ID: ${data.log_id}`, "ok");
+      document.getElementById("mileage").value = "";
+      document.getElementById("employee_name").value = "";
+      document.getElementById("notes").value = "";
+      photosInput.value = "";
+    } catch (e) {
+      setStatus(e.message || "Something broke. Try again.", "bad");
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
