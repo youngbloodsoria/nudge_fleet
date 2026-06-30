@@ -321,23 +321,14 @@ button.compact {
   stroke-width: 3;
 }
 
-.maintenance-line {
-  stroke: var(--warn);
-  stroke-width: 2;
+.projection-line {
+  stroke: #7e766a;
+  stroke-width: 3;
   stroke-dasharray: 6 5;
 }
 
-.maintenance-line.due,
-.maintenance-line.no_history {
-  stroke: var(--bad);
-}
-
-.maintenance-line.ok {
-  stroke: var(--good);
-}
-
-.maintenance-label {
-  fill: #4a453d;
+.projection-label {
+  fill: var(--muted);
   font-size: 11px;
   font-weight: 800;
 }
@@ -379,12 +370,14 @@ th {
 .pill.due,
 .pill.no_history { background: #f6dddd; color: var(--bad); }
 
-.alert-list {
+.alert-list,
+.forecast-list {
   display: grid;
   gap: 8px;
 }
 
-.alert-item {
+.alert-item,
+.forecast-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
