@@ -111,6 +111,23 @@ main { padding: 18px 0 28px; }
   height: auto;
 }
 
+.owner-login-link {
+  margin-top: 14px;
+  text-align: center;
+}
+
+.owner-login-link a {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.owner-login-link a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
 .row,
 .toolbar {
   display: grid;
