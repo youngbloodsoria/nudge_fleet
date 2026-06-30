@@ -146,6 +146,59 @@ begin
 end;
 $$;
 
+create or replace function nudge_fleet.log_vehicle_maintenance_service(
+  p_vehicle_id uuid,
+  p_service_name text,
+  p_service_date date,
+  p_mileage integer default null,
+  p_performed_by text default null,
+  p_cost numeric default null,
+  p_notes text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = nudge_fleet, public
+as $$
+declare
+  new_event_id uuid;
+begin
+  if not nudge_fleet.current_user_is_owner() then
+    raise exception 'Not authorized for fleet dashboard';
+  end if;
+
+  if p_vehicle_id is null then
+    raise exception 'Vehicle is required';
+  end if;
+
+  if nullif(trim(p_service_name), '') is null then
+    raise exception 'Service name is required';
+  end if;
+
+  insert into nudge_fleet.vehicle_maintenance_events (
+    vehicle_id,
+    service_name,
+    service_date,
+    mileage,
+    performed_by,
+    cost,
+    notes
+  )
+  values (
+    p_vehicle_id,
+    trim(p_service_name),
+    coalesce(p_service_date, current_date),
+    p_mileage,
+    nullif(trim(p_performed_by), ''),
+    p_cost,
+    nullif(trim(p_notes), '')
+  )
+  returning id into new_event_id;
+
+  return new_event_id;
+end;
+$$;
+
 create or replace function nudge_fleet.fleet_dashboard_summary(range_days integer default 90)
 returns jsonb
 language plpgsql
@@ -217,6 +270,15 @@ begin
           alert.created_at desc
         limit 100
       ) alert
+    ),
+    'service_history', (
+      select coalesce(jsonb_agg(to_jsonb(event) order by event.service_date desc, event.created_at desc), '[]'::jsonb)
+      from (
+        select id, vehicle_id, service_name, service_date, mileage, performed_by, cost, notes, created_at
+        from nudge_fleet.vehicle_maintenance_events
+        order by service_date desc, created_at desc
+        limit 100
+      ) event
     )
   ) into dashboard_payload;
 
@@ -269,8 +331,10 @@ revoke all on function nudge_fleet.fleet_maintenance_email_summary() from public
 revoke all on function nudge_fleet.seed_highlander_100k_baseline(date) from public;
 revoke all on function nudge_fleet.queue_vehicle_log_alert() from public;
 revoke all on function nudge_fleet.mark_alert_reviewed(uuid) from public;
+revoke all on function nudge_fleet.log_vehicle_maintenance_service(uuid, text, date, integer, text, numeric, text) from public;
 revoke all on function nudge_fleet.fleet_dashboard_summary(integer) from public;
 grant execute on function nudge_fleet.fleet_maintenance_email_summary() to authenticated;
 grant execute on function nudge_fleet.fleet_maintenance_email_summary() to service_role;
 grant execute on function nudge_fleet.mark_alert_reviewed(uuid) to authenticated;
+grant execute on function nudge_fleet.log_vehicle_maintenance_service(uuid, text, date, integer, text, numeric, text) to authenticated;
 grant execute on function nudge_fleet.fleet_dashboard_summary(integer) to authenticated;

@@ -30,6 +30,15 @@ const els = {
   dailyMileageChart: document.getElementById("dailyMileageChart"),
   dailyChartSummary: document.getElementById("dailyChartSummary"),
   serviceForecastRows: document.getElementById("serviceForecastRows"),
+  serviceName: document.getElementById("serviceName"),
+  serviceMileage: document.getElementById("serviceMileage"),
+  serviceDate: document.getElementById("serviceDate"),
+  servicePerformedBy: document.getElementById("servicePerformedBy"),
+  serviceCost: document.getElementById("serviceCost"),
+  serviceNotes: document.getElementById("serviceNotes"),
+  saveServiceBtn: document.getElementById("saveServiceBtn"),
+  serviceStatus: document.getElementById("serviceStatus"),
+  serviceHistoryRows: document.getElementById("serviceHistoryRows"),
   driverRows: document.getElementById("driverRows"),
   maintenanceRows: document.getElementById("maintenanceRows"),
   alertRows: document.getElementById("alertRows"),
@@ -76,6 +85,10 @@ function rangeDays() {
 
 function selectedVehicleId() {
   return els.vehicleSelect.value || state.summary?.vehicles?.[0]?.id || "";
+}
+
+function todayValue() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function rowsOrEmpty(rows, columns) {
@@ -261,11 +274,45 @@ function renderDashboard() {
   renderDailyMileageChart(logs, rate);
   renderMaintenanceRunway(logs, maintenance, rate);
   renderServiceForecast(maintenance, rate);
+  renderServiceForm(vehicleId, latest, maintenance);
+  renderServiceHistory(vehicleId);
   renderAlerts(vehicleId, maintenance);
   renderDrivers(drivers);
   renderMaintenance(maintenance, rate);
   renderIncidents(incidents);
   renderRecent(logs);
+}
+
+async function saveService() {
+  const vehicleId = selectedVehicleId();
+  const serviceName = els.serviceName.value;
+  const mileage = els.serviceMileage.value === "" ? null : Number(els.serviceMileage.value);
+  const serviceDate = els.serviceDate.value || todayValue();
+  const performedBy = els.servicePerformedBy.value.trim() || null;
+  const cost = els.serviceCost.value === "" ? null : Number(els.serviceCost.value);
+  const notes = els.serviceNotes.value.trim() || null;
+
+  if (!vehicleId) throw new Error("Choose a vehicle first.");
+  if (!serviceName) throw new Error("Choose a service type.");
+  if (mileage !== null && mileage < 0) throw new Error("Mileage must be positive.");
+  if (cost !== null && cost < 0) throw new Error("Cost must be positive.");
+
+  setStatus(els.serviceStatus, "Saving service...");
+  const { error } = await state.supabase.rpc("log_vehicle_maintenance_service", {
+    p_vehicle_id: vehicleId,
+    p_service_name: serviceName,
+    p_service_date: serviceDate,
+    p_mileage: mileage,
+    p_performed_by: performedBy,
+    p_cost: cost,
+    p_notes: notes,
+  });
+  if (error) throw error;
+
+  els.serviceCost.value = "";
+  els.serviceNotes.value = "";
+  setStatus(els.serviceStatus, "Service saved.");
+  await loadDashboard();
 }
 
 async function markAlertReviewed(alertId) {
@@ -502,6 +549,36 @@ function renderServiceForecast(maintenance, rate) {
   }).join(""));
 }
 
+function renderServiceForm(vehicleId, latest, maintenance) {
+  const current = els.serviceName.value;
+  const serviceNames = [...new Set(maintenance.map((item) => item.service_name).filter(Boolean))].sort();
+  els.serviceName.innerHTML = serviceNames.map((serviceName) => (
+    `<option value="${serviceName}">${serviceName}</option>`
+  )).join("");
+  if (serviceNames.includes(current)) els.serviceName.value = current;
+
+  if (!els.serviceDate.value) els.serviceDate.value = todayValue();
+  if (!els.serviceMileage.value && latest.last_mileage) {
+    els.serviceMileage.value = latest.last_mileage;
+  }
+
+  els.saveServiceBtn.disabled = !vehicleId || !serviceNames.length;
+}
+
+function renderServiceHistory(vehicleId) {
+  const history = (state.summary.service_history || []).filter((row) => row.vehicle_id === vehicleId);
+  els.serviceHistoryRows.innerHTML = cardsOrEmpty(history.slice(0, 10).map((event) => `
+    <article class="forecast-item">
+      <div>
+        <div class="alert-title">${event.service_name}</div>
+        <div class="subtle">${fmtDate(event.service_date)} · ${fmtNumber(event.mileage)} mi</div>
+        <div class="subtle">${event.performed_by || ""}${event.cost ? ` · $${Number(event.cost).toFixed(2)}` : ""}</div>
+        ${event.notes ? `<div class="alert-note">${event.notes}</div>` : ""}
+      </div>
+    </article>
+  `).join(""));
+}
+
 function renderDrivers(drivers) {
   els.driverRows.innerHTML = rowsOrEmpty(drivers.slice(0, 12).map((row) => `
     <tr>
@@ -571,6 +648,10 @@ els.signOutBtn.addEventListener("click", async () => {
 
 els.refreshBtn.addEventListener("click", () => {
   loadDashboard().catch((error) => setStatus(els.dashboardStatus, error.message, true));
+});
+
+els.saveServiceBtn.addEventListener("click", () => {
+  saveService().catch((error) => setStatus(els.serviceStatus, error.message, true));
 });
 
 els.alertRows.addEventListener("click", (event) => {

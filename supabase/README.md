@@ -40,6 +40,7 @@ The dashboard now has the SQL shape needed for alerts:
 - `queue_vehicle_log_alert_trigger` creates a pending alert event whenever a vehicle log is inserted.
 - `fleet_dashboard_summary(range_days)` returns alert events for the owner dashboard.
 - `mark_alert_reviewed(alert_id)` lets an owner mark a dashboard alert reviewed.
+- `log_vehicle_maintenance_service(...)` lets an owner add maintenance history from the dashboard.
 - `fleet_maintenance_alert_items` lists due, soon, and missing-history services.
 - `fleet_maintenance_email_summary()` returns maintenance alert data as JSON.
 
