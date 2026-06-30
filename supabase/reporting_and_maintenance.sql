@@ -197,7 +197,7 @@ select
 from nudge_fleet.vehicles v
 cross join (
   values
-    ('Engine oil and filter', 10000, 12, 'Toyota normal-service cadence for synthetic oil; use 5000 miles/6 months for severe use.'),
+    ('Engine oil and filter', 10000, 6, 'Change every 10,000 miles or 6 months, whichever comes first. Use 5,000 miles for severe use.'),
     ('Tire rotation', 5000, 6, 'Rotate tires and inspect tire condition.'),
     ('Brake inspection', 5000, 6, 'Inspect pads, rotors, lines, parking brake, and fluid condition.'),
     ('Fluid level inspection', 5000, 6, 'Inspect coolant, brake fluid, washer fluid, transmission/driveline leaks.'),
@@ -210,6 +210,13 @@ cross join (
 ) as rule(service_name, interval_miles, interval_months, notes)
 where lower(coalesce(v.name, '')) like '%highlander%'
 on conflict do nothing;
+
+update nudge_fleet.vehicle_maintenance_rules
+set interval_months = 6,
+    notes = 'Change every 10,000 miles or 6 months, whichever comes first. Use 5,000 miles for severe use.'
+where service_name = 'Engine oil and filter'
+  and interval_miles = 10000
+  and is_active = true;
 
 -- Optional RPC for an Edge Function or service-role job. It removes old
 -- non-incident photo rows and returns the storage paths to delete from Storage.

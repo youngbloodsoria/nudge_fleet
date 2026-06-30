@@ -27,6 +27,8 @@ const els = {
   latestStatus: document.getElementById("latestStatus"),
   mileageChart: document.getElementById("mileageChart"),
   chartSummary: document.getElementById("chartSummary"),
+  dailyMileageChart: document.getElementById("dailyMileageChart"),
+  dailyChartSummary: document.getElementById("dailyChartSummary"),
   serviceForecastRows: document.getElementById("serviceForecastRows"),
   driverRows: document.getElementById("driverRows"),
   maintenanceRows: document.getElementById("maintenanceRows"),
@@ -256,7 +258,8 @@ function renderDashboard() {
   els.checkoutCount.textContent = fmtNumber(checkoutCount);
 
   renderLatest(latest);
-  renderChart(logs, rate);
+  renderDailyMileageChart(logs, rate);
+  renderMaintenanceRunway(logs, maintenance, rate);
   renderServiceForecast(maintenance, rate);
   renderAlerts(vehicleId, maintenance);
   renderDrivers(drivers);
@@ -324,22 +327,95 @@ function renderLatest(latest) {
   ].map(([label, value]) => `<tr><th>${label}</th><td>${value || "-"}</td></tr>`).join("");
 }
 
-function renderChart(logs, rate) {
-  const mileageLogs = sortedMileageLogs(logs);
-  if (mileageLogs.length < 2) {
-    els.chartSummary.innerHTML = "";
-    els.mileageChart.innerHTML = '<div class="empty">No mileage data in this range.</div>';
+function dailyMileage(logs) {
+  const deltas = mileageDeltas(logs);
+  const byDate = new Map();
+  deltas.forEach((row) => {
+    const key = row.created_at.slice(0, 10);
+    byDate.set(key, (byDate.get(key) || 0) + row.delta);
+  });
+  return [...byDate.entries()]
+    .map(([date, miles]) => ({ date, miles, at: new Date(`${date}T00:00:00`) }))
+    .sort((a, b) => a.at - b.at);
+}
+
+function renderDailyMileageChart(logs, rate) {
+  const days = dailyMileage(logs);
+  if (!days.length) {
+    els.dailyChartSummary.innerHTML = "";
+    els.dailyMileageChart.innerHTML = '<div class="empty">No daily mileage data in this range.</div>';
     return;
   }
 
-  const values = mileageLogs.map((row) => row.mileage);
+  const width = 760;
+  const height = 250;
+  const margin = { top: 18, right: 18, bottom: 36, left: 64 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const maxMiles = Math.max(...days.map((day) => day.miles), 1);
+  const minTime = days[0].at.getTime();
+  const maxTime = days[days.length - 1].at.getTime();
+  const span = Math.max(maxTime - minTime, 1);
+  const x = (time) => margin.left + ((time - minTime) / span) * plotWidth;
+  const y = (miles) => margin.top + (1 - miles / maxMiles) * plotHeight;
+  const barWidth = Math.max(Math.min(plotWidth / Math.max(days.length, 1) - 3, 18), 5);
+  const ticks = Array.from({ length: 5 }, (_, index) => (maxMiles / 4) * index);
+  const dateTicks = [days[0], days[Math.floor(days.length / 2)], days[days.length - 1]];
+
+  els.dailyChartSummary.innerHTML = `
+    <span>${fmtNumber(days.length)} driving days in range</span>
+    <span>${rate ? `${fmtNumber(Math.round(rate.milesPerDay))} miles/day pace` : ""}</span>
+  `;
+
+  els.dailyMileageChart.innerHTML = `
+    <svg class="mileage-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily miles driven">
+      ${ticks.map((tick) => `
+        <g>
+          <line class="chart-grid" x1="${margin.left}" y1="${y(tick).toFixed(1)}" x2="${width - margin.right}" y2="${y(tick).toFixed(1)}"></line>
+          <text class="chart-axis-label" x="${margin.left - 10}" y="${(y(tick) + 4).toFixed(1)}" text-anchor="end">${fmtNumber(Math.round(tick))}</text>
+        </g>
+      `).join("")}
+      ${dateTicks.map((day) => `
+        <text class="chart-axis-label" x="${x(day.at.getTime()).toFixed(1)}" y="${height - 10}" text-anchor="middle">${fmtShortDate(day.at)}</text>
+      `).join("")}
+      ${days.map((day) => {
+        const barHeight = Math.max(plotHeight - (y(day.miles) - margin.top), 3);
+        const barX = x(day.at.getTime()) - barWidth / 2;
+        const barY = margin.top + plotHeight - barHeight;
+        return `
+          <rect class="daily-bar" x="${barX.toFixed(1)}" y="${barY.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="3">
+            <title>${fmtDate(day.at)} · ${fmtNumber(day.miles)} miles</title>
+          </rect>
+        `;
+      }).join("")}
+      <text class="chart-axis-title" x="14" y="${margin.top}" transform="rotate(-90 14 ${margin.top})">Miles/day</text>
+    </svg>
+  `;
+}
+
+function renderMaintenanceRunway(logs, maintenance, rate) {
+  const mileageLogs = sortedMileageLogs(logs);
+  if (mileageLogs.length < 2 || !rate) {
+    els.chartSummary.innerHTML = "";
+    els.mileageChart.innerHTML = '<div class="empty">Need more mileage history to project the next 12 months.</div>';
+    return;
+  }
+
+  const runwayDays = 365;
+  const runwayEnd = new Date(rate.latestDate.getTime() + runwayDays * 86400000);
+  const projectedEndMileage = rate.latestMileage + rate.milesPerDay * runwayDays;
+  const forecastItems = maintenance
+    .map((item) => ({ item, prediction: predictionForMaintenance(item, rate) }))
+    .filter((entry) => entry.prediction.date && entry.prediction.date <= runwayEnd)
+    .sort((a, b) => a.prediction.date - b.prediction.date);
+  const values = [rate.latestMileage, projectedEndMileage, ...forecastItems.map((entry) => Number(entry.item.due_mileage || rate.latestMileage))];
   const minMileage = Math.min(...values);
   const maxMileage = Math.max(...values);
-  const padding = Math.max(Math.round((maxMileage - minMileage) * 0.2), 100);
+  const padding = Math.max(Math.round((maxMileage - minMileage) * 0.1), 250);
   const yMin = Math.max(0, minMileage - padding);
   const yMax = maxMileage + padding;
-  const minTime = mileageLogs[0].at.getTime();
-  const maxTime = mileageLogs[mileageLogs.length - 1].at.getTime();
+  const minTime = rate.latestDate.getTime();
+  const maxTime = runwayEnd.getTime();
   const width = 760;
   const height = 280;
   const margin = { top: 18, right: 24, bottom: 38, left: 72 };
@@ -348,26 +424,27 @@ function renderChart(logs, rate) {
   const span = Math.max(maxTime - minTime, 1);
   const x = (time) => margin.left + ((time - minTime) / span) * plotWidth;
   const y = (mileage) => margin.top + (1 - ((mileage - yMin) / (yMax - yMin || 1))) * plotHeight;
-  const points = mileageLogs.map((row) => `${x(row.at.getTime()).toFixed(1)},${y(row.mileage).toFixed(1)}`).join(" ");
+  const projectionPoints = Array.from({ length: 13 }, (_, index) => {
+    const day = (runwayDays / 12) * index;
+    const time = rate.latestDate.getTime() + day * 86400000;
+    const mileage = rate.latestMileage + rate.milesPerDay * day;
+    return `${x(time).toFixed(1)},${y(mileage).toFixed(1)}`;
+  }).join(" ");
   const ticks = Array.from({ length: 5 }, (_, index) => yMin + ((yMax - yMin) / 4) * index);
-  const dateTicks = [mileageLogs[0], mileageLogs[Math.floor(mileageLogs.length / 2)], mileageLogs[mileageLogs.length - 1]];
-  const projectionDays = Math.min(Math.max(rangeDays() || 90, 30), 180);
-  const projectionEnd = rate
-    ? new Date(rate.latestDate.getTime() + projectionDays * 86400000)
-    : null;
-  const projectionMileage = rate
-    ? rate.latestMileage + rate.milesPerDay * projectionDays
-    : null;
-  const projectionX = projectionEnd ? width - margin.right : null;
-  const projectionY = projectionMileage ? y(Math.min(Math.max(projectionMileage, yMin), yMax)) : null;
+  const dateTicks = [
+    { at: rate.latestDate },
+    { at: new Date(rate.latestDate.getTime() + 182 * 86400000) },
+    { at: runwayEnd },
+  ];
 
   els.chartSummary.innerHTML = `
-    <span>${rate ? `${fmtNumber(Math.round(rate.milesPerDay))} miles/day recently` : "Need more mileage history"}</span>
-    <span>${rate ? `${fmtNumber(Math.round(rate.milesPerDay * 365))} projected miles/year` : ""}</span>
+    <span>12-month runway</span>
+    <span>${fmtNumber(Math.round(rate.milesPerDay * 365))} projected miles/year</span>
+    <span>${forecastItems.length ? `${forecastItems.length} service markers` : "No service projected in next 12 months"}</span>
   `;
 
   els.mileageChart.innerHTML = `
-    <svg class="mileage-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Odometer mileage over time">
+    <svg class="mileage-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Projected mileage and maintenance over next 12 months">
       ${ticks.map((tick) => `
         <g>
           <line class="chart-grid" x1="${margin.left}" y1="${y(tick).toFixed(1)}" x2="${width - margin.right}" y2="${y(tick).toFixed(1)}"></line>
@@ -377,19 +454,15 @@ function renderChart(logs, rate) {
       ${dateTicks.map((row) => `
         <text class="chart-axis-label" x="${x(row.at.getTime()).toFixed(1)}" y="${height - 10}" text-anchor="middle">${fmtShortDate(row.at)}</text>
       `).join("")}
-      <polyline class="mileage-line" points="${points}"></polyline>
-      ${rate ? `
-        <line class="projection-line"
-          x1="${x(rate.latestDate.getTime()).toFixed(1)}"
-          y1="${y(rate.latestMileage).toFixed(1)}"
-          x2="${projectionX.toFixed(1)}"
-          y2="${projectionY.toFixed(1)}"></line>
-        <text class="projection-label" x="${(projectionX - 6).toFixed(1)}" y="${(projectionY - 8).toFixed(1)}" text-anchor="end">Projected pace</text>
-      ` : ""}
-      ${mileageLogs.map((row) => `
-        <circle class="mileage-point" cx="${x(row.at.getTime()).toFixed(1)}" cy="${y(row.mileage).toFixed(1)}" r="4">
-          <title>${fmtDateTime(row.created_at)} · ${fmtNumber(row.mileage)} mi · ${row.employee_name || ""}</title>
-        </circle>
+      <polyline class="runway-line" points="${projectionPoints}"></polyline>
+      ${forecastItems.map(({ item, prediction }) => `
+        <g>
+          <line class="service-marker-line" x1="${x(prediction.date.getTime()).toFixed(1)}" y1="${margin.top}" x2="${x(prediction.date.getTime()).toFixed(1)}" y2="${height - margin.bottom}"></line>
+          <circle class="service-marker ${item.status}" cx="${x(prediction.date.getTime()).toFixed(1)}" cy="${y(Number(item.due_mileage || rate.latestMileage)).toFixed(1)}" r="5">
+            <title>${item.service_name} · ${prediction.label}</title>
+          </circle>
+          <text class="service-marker-label" x="${x(prediction.date.getTime()).toFixed(1)}" y="${(y(Number(item.due_mileage || rate.latestMileage)) - 10).toFixed(1)}" text-anchor="middle">${item.service_name.split(" ")[0]}</text>
+        </g>
       `).join("")}
       <text class="chart-axis-title" x="14" y="${margin.top}" transform="rotate(-90 14 ${margin.top})">Mileage</text>
     </svg>

@@ -321,10 +321,48 @@ button.compact {
   stroke-width: 3;
 }
 
+.daily-bar {
+  fill: var(--accent-2);
+}
+
 .projection-line {
   stroke: #7e766a;
   stroke-width: 3;
   stroke-dasharray: 6 5;
+}
+
+.runway-line {
+  fill: none;
+  stroke: var(--accent-2);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.service-marker-line {
+  stroke: #cfc7ba;
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.service-marker {
+  fill: #fff;
+  stroke: var(--warn);
+  stroke-width: 3;
+}
+
+.service-marker.due,
+.service-marker.no_history {
+  stroke: var(--bad);
+}
+
+.service-marker.ok {
+  stroke: var(--good);
+}
+
+.service-marker-label {
+  fill: #4a453d;
+  font-size: 10px;
+  font-weight: 800;
 }
 
 .projection-label {
