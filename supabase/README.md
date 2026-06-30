@@ -38,10 +38,18 @@ The dashboard now has the SQL shape needed for alerts:
 
 - `alert_events` stores future alert activity.
 - `queue_vehicle_log_alert_trigger` creates a pending alert event whenever a vehicle log is inserted.
+- `fleet_dashboard_summary(range_days)` returns alert events for the owner dashboard.
+- `mark_alert_reviewed(alert_id)` lets an owner mark a dashboard alert reviewed.
 - `fleet_maintenance_alert_items` lists due, soon, and missing-history services.
 - `fleet_maintenance_email_summary()` returns maintenance alert data as JSON.
 
-Actual email sending still needs an approved email provider and recipient. Do not add a service-role key or email API key to client-side code.
+The current recommendation is dashboard-first:
+
+- Normal check-out/check-in: dashboard alert only.
+- Incident/damage: review immediately in the dashboard; email can be added later if needed.
+- Maintenance due/soon or not driven recently: visible in the dashboard; add weekly email only if the dashboard is not enough.
+
+Actual email sending should be server-side only. Do not add a service-role key or email API key to client-side code.
 
 Recommended Vercel-only server env vars once an email provider is selected:
 

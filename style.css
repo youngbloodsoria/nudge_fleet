@@ -179,6 +179,13 @@ button.secondary {
   border: 1px solid #d6d0c4;
 }
 
+button.compact {
+  width: auto;
+  min-height: 32px;
+  padding: 6px 9px;
+  font-size: 12px;
+}
+
 .button-link {
   display: inline-flex;
   align-items: center;
@@ -328,6 +335,40 @@ th {
 .pill.soon { background: #fff1d8; color: var(--warn); }
 .pill.due,
 .pill.no_history { background: #f6dddd; color: var(--bad); }
+
+.alert-list {
+  display: grid;
+  gap: 8px;
+}
+
+.alert-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfaf6;
+}
+
+.alert-title {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.alert-note {
+  margin-top: 6px;
+  color: #34312c;
+  font-size: 13px;
+}
+
+.alert-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
 
 .status {
   min-height: 20px;

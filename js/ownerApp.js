@@ -28,6 +28,8 @@ const els = {
   mileageChart: document.getElementById("mileageChart"),
   driverRows: document.getElementById("driverRows"),
   maintenanceRows: document.getElementById("maintenanceRows"),
+  alertRows: document.getElementById("alertRows"),
+  maintenanceAlertRows: document.getElementById("maintenanceAlertRows"),
   incidentRows: document.getElementById("incidentRows"),
   recentRows: document.getElementById("recentRows"),
 };
@@ -53,6 +55,11 @@ function fmtDate(value) {
   return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
+function fmtDateTime(value) {
+  if (!value) return "-";
+  return new Date(value).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 function rangeDays() {
   const value = els.rangeSelect.value;
   return value === "all" ? null : Number(value);
@@ -64,6 +71,10 @@ function selectedVehicleId() {
 
 function rowsOrEmpty(rows, columns) {
   return rows || `<tr><td colspan="${columns}" class="empty">No data yet.</td></tr>`;
+}
+
+function cardsOrEmpty(cards) {
+  return cards || '<div class="empty">Nothing needs attention.</div>';
 }
 
 function mileageDeltas(logs) {
@@ -186,10 +197,59 @@ function renderDashboard() {
 
   renderLatest(latest);
   renderChart(daily);
+  renderAlerts(vehicleId, maintenance);
   renderDrivers(drivers);
   renderMaintenance(maintenance);
   renderIncidents(incidents);
   renderRecent(logs);
+}
+
+async function markAlertReviewed(alertId) {
+  const { error } = await state.supabase.rpc("mark_alert_reviewed", { alert_id: alertId });
+  if (error) throw error;
+  await loadDashboard();
+}
+
+function renderAlerts(vehicleId, maintenance) {
+  const alerts = (state.summary.alerts || []).filter((row) => !row.vehicle_id || row.vehicle_id === vehicleId);
+  const maintenanceAttention = maintenance.filter((row) => ["due", "soon", "no_history"].includes(row.status));
+
+  els.alertRows.innerHTML = cardsOrEmpty(alerts.slice(0, 12).map((alert) => {
+    const payload = alert.payload || {};
+    const action = payload.log_type === "return" ? "Checked back in" : "Checked out";
+    const statusClass = alert.status === "failed" ? "due" : "soon";
+    return `
+      <article class="alert-item">
+        <div>
+          <div class="alert-title">${action}: ${payload.employee_name || "Driver"}</div>
+          <div class="subtle">${payload.vehicle || ""}</div>
+          <div class="subtle">${fmtDateTime(alert.created_at)} · ${fmtNumber(payload.mileage)} mi</div>
+          ${payload.notes ? `<div class="alert-note">${payload.notes}</div>` : ""}
+        </div>
+        <div class="alert-actions">
+          <span class="pill ${statusClass}">${alert.status}</span>
+          ${alert.status === "pending" ? `<button class="secondary compact" data-alert-id="${alert.id}" type="button">Reviewed</button>` : ""}
+        </div>
+      </article>
+    `;
+  }).join(""));
+
+  els.maintenanceAlertRows.innerHTML = cardsOrEmpty(maintenanceAttention.map((item) => {
+    const due = [
+      item.due_mileage ? `${fmtNumber(item.due_mileage)} mi` : "",
+      item.due_date ? fmtDate(item.due_date) : "",
+    ].filter(Boolean).join(" / ") || "Add service history";
+    return `
+      <article class="alert-item">
+        <div>
+          <div class="alert-title">${item.service_name}</div>
+          <div class="subtle">${item.vehicle_name || ""}</div>
+          <div class="subtle">Due: ${due}</div>
+        </div>
+        <span class="pill ${item.status}">${String(item.status || "ok").replace("_", " ")}</span>
+      </article>
+    `;
+  }).join(""));
 }
 
 function renderLatest(latest) {
@@ -291,6 +351,13 @@ els.signOutBtn.addEventListener("click", async () => {
 
 els.refreshBtn.addEventListener("click", () => {
   loadDashboard().catch((error) => setStatus(els.dashboardStatus, error.message, true));
+});
+
+els.alertRows.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-alert-id]");
+  if (!button) return;
+  button.disabled = true;
+  markAlertReviewed(button.dataset.alertId).catch((error) => setStatus(els.dashboardStatus, error.message, true));
 });
 
 els.vehicleSelect.addEventListener("change", renderDashboard);
