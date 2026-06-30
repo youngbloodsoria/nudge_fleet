@@ -154,7 +154,7 @@ security definer
 set search_path = nudge_fleet, public
 as $$
 declare
-  payload jsonb;
+  dashboard_payload jsonb;
 begin
   if not nudge_fleet.current_user_is_owner() then
     raise exception 'Not authorized for fleet dashboard';
@@ -201,26 +201,26 @@ begin
     'alerts', (
       select coalesce(jsonb_agg(to_jsonb(alert) order by alert.created_at desc), '[]'::jsonb)
       from (
-        select id, alert_type, vehicle_id, log_id, subject, payload, status, created_at
-        from nudge_fleet.alert_events
-        where status in ('pending', 'failed')
+        select alert.id, alert.alert_type, alert.vehicle_id, alert.log_id, alert.subject, alert.payload, alert.status, alert.created_at
+        from nudge_fleet.alert_events alert
+        where alert.status in ('pending', 'failed')
            or (
              range_days is not null
-             and created_at >= now() - make_interval(days => range_days)
+             and alert.created_at >= now() - make_interval(days => range_days)
            )
         order by
-          case status
+          case alert.status
             when 'pending' then 1
             when 'failed' then 2
             else 3
           end,
-          created_at desc
+          alert.created_at desc
         limit 100
       ) alert
     )
-  ) into payload;
+  ) into dashboard_payload;
 
-  return payload;
+  return dashboard_payload;
 end;
 $$;
 
