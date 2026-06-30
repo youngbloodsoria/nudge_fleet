@@ -4,6 +4,8 @@ Run `reporting_and_maintenance.sql` in Supabase SQL Editor for the project that 
 
 Then run `owner_access.sql` to add the owner allowlist and protected dashboard RPC.
 
+Then run `alerts_and_100k_baseline.sql` to add alert summary support and seed a temporary 100k-mile Highlander maintenance baseline.
+
 ## Vercel environment variables
 
 Set these in the Vercel project, then redeploy:
@@ -29,6 +31,37 @@ set is_active = true,
 ```
 
 3. Open `/dashboard.html` and sign in.
+
+## Alerts
+
+The dashboard now has the SQL shape needed for alerts:
+
+- `alert_events` stores future alert activity.
+- `queue_vehicle_log_alert_trigger` creates a pending alert event whenever a vehicle log is inserted.
+- `fleet_maintenance_alert_items` lists due, soon, and missing-history services.
+- `fleet_maintenance_email_summary()` returns maintenance alert data as JSON.
+
+Actual email sending still needs an approved email provider and recipient. Do not add a service-role key or email API key to client-side code.
+
+Recommended Vercel-only server env vars once an email provider is selected:
+
+```text
+ALERT_TO_EMAIL=owner@example.com
+ALERT_FROM_EMAIL=Nudge Fleet <alerts@yourdomain.com>
+SUPABASE_SERVICE_ROLE_KEY=server-only Supabase service role key
+```
+
+The service-role key must only live in Vercel serverless environment variables, never in browser JavaScript.
+
+## 100k-mile maintenance baseline
+
+`alerts_and_100k_baseline.sql` calls:
+
+```sql
+select nudge_fleet.seed_highlander_100k_baseline(current_date);
+```
+
+That creates maintenance history at 100,000 miles for Highlander maintenance rules that do not already have a service event. It is intentionally marked as a temporary owner-provided baseline so it can be replaced with exact Toyota invoice details later.
 
 ## Dashboard access
 

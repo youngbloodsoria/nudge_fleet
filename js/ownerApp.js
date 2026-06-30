@@ -20,6 +20,10 @@ const els = {
   logCount: document.getElementById("logCount"),
   rangeMiles: document.getElementById("rangeMiles"),
   attentionCount: document.getElementById("attentionCount"),
+  averageUseMiles: document.getElementById("averageUseMiles"),
+  recentUseMiles: document.getElementById("recentUseMiles"),
+  incidentCount: document.getElementById("incidentCount"),
+  checkoutCount: document.getElementById("checkoutCount"),
   latestStatus: document.getElementById("latestStatus"),
   mileageChart: document.getElementById("mileageChart"),
   driverRows: document.getElementById("driverRows"),
@@ -60,6 +64,19 @@ function selectedVehicleId() {
 
 function rowsOrEmpty(rows, columns) {
   return rows || `<tr><td colspan="${columns}" class="empty">No data yet.</td></tr>`;
+}
+
+function mileageDeltas(logs) {
+  return [...logs]
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    .map((row, index, sorted) => {
+      if (index === 0) return null;
+      const previous = Number(sorted[index - 1].mileage || 0);
+      const current = Number(row.mileage || 0);
+      const delta = current - previous;
+      return delta > 0 ? { ...row, delta } : null;
+    })
+    .filter(Boolean);
 }
 
 async function initialize() {
@@ -150,14 +167,22 @@ function renderDashboard() {
   const maintenance = (state.summary.maintenance || []).filter((row) => row.vehicle_id === vehicleId);
   const incidents = (state.summary.incidents || []).filter((row) => row.vehicle_id === vehicleId);
 
-  const mileages = logs.map((row) => Number(row.mileage || 0)).filter(Boolean);
-  const estimatedMiles = mileages.length ? Math.max(...mileages) - Math.min(...mileages) : 0;
+  const deltas = mileageDeltas(logs);
+  const estimatedMiles = deltas.reduce((total, row) => total + row.delta, 0);
+  const averageUseMiles = deltas.length ? estimatedMiles / deltas.length : 0;
+  const recentUseMiles = deltas[deltas.length - 1]?.delta || 0;
+  const checkoutCount = logs.filter((row) => row.log_type === "checkout").length;
+  const incidentCount = incidents.reduce((total, row) => total + Number(row.incident_count || 0), 0);
   const attention = maintenance.filter((row) => ["due", "soon", "no_history"].includes(row.status)).length + incidents.length;
 
   els.currentMileage.textContent = fmtNumber(latest.last_mileage);
   els.logCount.textContent = fmtNumber(logs.length);
   els.rangeMiles.textContent = fmtNumber(Math.max(estimatedMiles, 0));
   els.attentionCount.textContent = fmtNumber(attention);
+  els.averageUseMiles.textContent = fmtNumber(Math.round(averageUseMiles));
+  els.recentUseMiles.textContent = fmtNumber(recentUseMiles);
+  els.incidentCount.textContent = fmtNumber(incidentCount);
+  els.checkoutCount.textContent = fmtNumber(checkoutCount);
 
   renderLatest(latest);
   renderChart(daily);
