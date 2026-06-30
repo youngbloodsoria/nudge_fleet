@@ -1,6 +1,11 @@
 import { configIsReady, loadAppConfig } from "./config.js";
 
 const SCHEMA = "nudge_fleet";
+const VISIBLE_LIMIT = {
+  maintenance: 6,
+  logs: 5,
+  services: 3,
+};
 
 const els = {
   configWarning: document.getElementById("configWarning"),
@@ -14,22 +19,24 @@ const els = {
   magicLinkBtn: document.getElementById("magicLinkBtn"),
   signOutBtn: document.getElementById("signOutBtn"),
   refreshBtn: document.getElementById("refreshBtn"),
+  openServiceBtn: document.getElementById("openServiceBtn"),
+  closeServiceBtn: document.getElementById("closeServiceBtn"),
+  serviceModal: document.getElementById("serviceModal"),
   vehicleSelect: document.getElementById("vehicleSelect"),
   rangeSelect: document.getElementById("rangeSelect"),
-  currentMileage: document.getElementById("currentMileage"),
-  logCount: document.getElementById("logCount"),
-  rangeMiles: document.getElementById("rangeMiles"),
-  attentionCount: document.getElementById("attentionCount"),
-  averageUseMiles: document.getElementById("averageUseMiles"),
-  recentUseMiles: document.getElementById("recentUseMiles"),
-  incidentCount: document.getElementById("incidentCount"),
-  checkoutCount: document.getElementById("checkoutCount"),
-  latestStatus: document.getElementById("latestStatus"),
+  currentVehicleLabel: document.getElementById("currentVehicleLabel"),
+  currentStatusBadge: document.getElementById("currentStatusBadge"),
+  currentStatusDriver: document.getElementById("currentStatusDriver"),
+  currentStatusAction: document.getElementById("currentStatusAction"),
+  currentStatusDate: document.getElementById("currentStatusDate"),
+  currentStatusMileage: document.getElementById("currentStatusMileage"),
+  glanceRows: document.getElementById("glanceRows"),
+  maintenanceCards: document.getElementById("maintenanceCards"),
+  metricTiles: document.getElementById("metricTiles"),
   mileageChart: document.getElementById("mileageChart"),
   chartSummary: document.getElementById("chartSummary"),
   dailyMileageChart: document.getElementById("dailyMileageChart"),
   dailyChartSummary: document.getElementById("dailyChartSummary"),
-  serviceForecastRows: document.getElementById("serviceForecastRows"),
   serviceName: document.getElementById("serviceName"),
   serviceMileage: document.getElementById("serviceMileage"),
   serviceDate: document.getElementById("serviceDate"),
@@ -39,41 +46,67 @@ const els = {
   saveServiceBtn: document.getElementById("saveServiceBtn"),
   serviceStatus: document.getElementById("serviceStatus"),
   serviceHistoryRows: document.getElementById("serviceHistoryRows"),
-  driverRows: document.getElementById("driverRows"),
-  maintenanceRows: document.getElementById("maintenanceRows"),
-  alertRows: document.getElementById("alertRows"),
-  maintenanceAlertRows: document.getElementById("maintenanceAlertRows"),
-  incidentRows: document.getElementById("incidentRows"),
+  incidentSummary: document.getElementById("incidentSummary"),
   recentRows: document.getElementById("recentRows"),
+  toggleMaintenanceBtn: document.getElementById("toggleMaintenanceBtn"),
+  toggleLogsBtn: document.getElementById("toggleLogsBtn"),
+  toggleServicesBtn: document.getElementById("toggleServicesBtn"),
+  toggleIncidentsBtn: document.getElementById("toggleIncidentsBtn"),
 };
 
 const state = {
   supabase: null,
   session: null,
   summary: null,
+  expanded: {
+    maintenance: false,
+    logs: false,
+    services: false,
+    incidents: false,
+  },
 };
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 
 function setStatus(element, message, isBad = false) {
   element.textContent = message;
   element.className = "status" + (isBad ? " bad" : "");
 }
 
-function fmtNumber(value) {
+function formatNumber(value) {
   if (value === null || value === undefined || value === "") return "-";
   return Number(value).toLocaleString();
 }
 
-function fmtDate(value) {
+function formatMileage(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  return `${formatNumber(value)} mi`;
+}
+
+function formatDate(value) {
   if (!value) return "-";
   return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-function fmtDateTime(value) {
+function formatDateTime(value) {
   if (!value) return "-";
-  return new Date(value).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return new Date(value).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
-function fmtShortDate(value) {
+function formatShortDate(value) {
   if (!value) return "-";
   return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
@@ -91,12 +124,49 @@ function todayValue() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function rowsOrEmpty(rows, columns) {
-  return rows || `<tr><td colspan="${columns}" class="empty">No data yet.</td></tr>`;
+function cardsOrEmpty(cards, message = "No data yet.") {
+  return cards || `<div class="empty">${message}</div>`;
 }
 
-function cardsOrEmpty(cards) {
-  return cards || '<div class="empty">Nothing needs attention.</div>';
+function getMaintenanceStatusClass(status) {
+  const normalized = String(status || "ok");
+  if (normalized === "due") return "due";
+  if (normalized === "soon") return "soon";
+  if (normalized === "no_history") return "setup";
+  return "ok";
+}
+
+function maintenanceStatusLabel(status) {
+  const labels = {
+    due: "overdue",
+    soon: "due soon",
+    no_history: "needs setup",
+    ok: "ok",
+  };
+  return labels[status] || "ok";
+}
+
+function sortMaintenanceByUrgency(items) {
+  const order = { due: 1, soon: 2, no_history: 3, ok: 4 };
+  return [...items].sort((a, b) => {
+    const statusDelta = (order[a.status] || 5) - (order[b.status] || 5);
+    if (statusDelta) return statusDelta;
+    const aDate = a.due_date ? new Date(`${a.due_date}T00:00:00`).getTime() : Number.POSITIVE_INFINITY;
+    const bDate = b.due_date ? new Date(`${b.due_date}T00:00:00`).getTime() : Number.POSITIVE_INFINITY;
+    const aMiles = a.miles_remaining ?? Number.POSITIVE_INFINITY;
+    const bMiles = b.miles_remaining ?? Number.POSITIVE_INFINITY;
+    return Math.min(aDate, aMiles) - Math.min(bDate, bMiles);
+  });
+}
+
+function summarizeCurrentStatus(latest) {
+  const action = String(latest.last_log_type || "").toLowerCase();
+  const checkedOut = action === "checkout";
+  return {
+    label: checkedOut ? "Checked Out" : "Returned",
+    className: checkedOut ? "soon" : "ok",
+    actionLabel: action ? action.replace("-", " ") : "-",
+  };
 }
 
 function mileageDeltas(logs) {
@@ -120,6 +190,17 @@ function sortedMileageLogs(logs) {
       at: new Date(row.created_at),
     }))
     .filter((row) => row.mileage > 0 && !Number.isNaN(row.at.getTime()))
+    .sort((a, b) => a.at - b.at);
+}
+
+function dailyMileage(logs) {
+  const byDate = new Map();
+  mileageDeltas(logs).forEach((row) => {
+    const key = row.created_at.slice(0, 10);
+    byDate.set(key, (byDate.get(key) || 0) + row.delta);
+  });
+  return [...byDate.entries()]
+    .map(([date, miles]) => ({ date, miles, at: new Date(`${date}T00:00:00`) }))
     .sort((a, b) => a.at - b.at);
 }
 
@@ -148,12 +229,12 @@ function predictionForMaintenance(item, rate) {
     const milesRemaining = Number(item.due_mileage) - rate.latestMileage;
     const days = Math.max(milesRemaining / rate.milesPerDay, 0);
     const date = new Date(rate.latestDate.getTime() + days * 86400000);
-    predictions.push({ date, days, label: `${fmtDate(date)} by mileage` });
+    predictions.push({ date, days, label: `${formatDate(date)} by mileage` });
   }
   if (item.due_date) {
     const date = new Date(`${item.due_date}T00:00:00`);
     const days = Math.max((date - new Date()) / 86400000, 0);
-    predictions.push({ date, days, label: `${fmtDate(date)} by date` });
+    predictions.push({ date, days, label: `${formatDate(date)} by date` });
   }
   if (!predictions.length) return { label: "Add service history", date: null, days: null };
 
@@ -162,6 +243,16 @@ function predictionForMaintenance(item, rate) {
   const roundedDays = Math.round(next.days);
   const when = roundedDays <= 0 ? "now" : `in ${roundedDays} days`;
   return { ...next, label: `${next.label} (${when})` };
+}
+
+function milesRemaining(item, latestMileage) {
+  if (!item.due_mileage || !latestMileage) return null;
+  return Number(item.due_mileage) - Number(latestMileage);
+}
+
+function daysRemaining(item) {
+  if (!item.due_date) return null;
+  return Math.ceil((new Date(`${item.due_date}T00:00:00`) - new Date()) / 86400000);
 }
 
 async function initialize() {
@@ -198,6 +289,7 @@ function renderAuthState() {
   els.appPanel.hidden = !signedIn;
   els.signOutBtn.hidden = !signedIn;
   els.refreshBtn.hidden = !signedIn;
+  els.openServiceBtn.hidden = !signedIn;
 }
 
 async function signInWithPassword() {
@@ -231,14 +323,14 @@ async function loadDashboard() {
   state.summary = data || {};
   renderVehicleOptions();
   renderDashboard();
-  setStatus(els.dashboardStatus, "Dashboard updated.");
+  setStatus(els.dashboardStatus, `Dashboard updated: ${formatDateTime(new Date())}`);
 }
 
 function renderVehicleOptions() {
   const current = selectedVehicleId();
   els.vehicleSelect.innerHTML = (state.summary.vehicles || []).map((vehicle) => {
     const label = [vehicle.name, vehicle.plate].filter(Boolean).join(" - ") || vehicle.id;
-    return `<option value="${vehicle.id}">${label}</option>`;
+    return `<option value="${escapeHtml(vehicle.id)}">${escapeHtml(label)}</option>`;
   }).join("");
   if (current) els.vehicleSelect.value = current;
 }
@@ -247,40 +339,307 @@ function renderDashboard() {
   const vehicleId = selectedVehicleId();
   const logs = (state.summary.logs || []).filter((row) => row.vehicle_id === vehicleId);
   const latest = (state.summary.latest || []).find((row) => row.vehicle_id === vehicleId) || {};
-  const daily = (state.summary.daily || []).filter((row) => row.vehicle_id === vehicleId);
-  const drivers = (state.summary.drivers || []).filter((row) => row.vehicle_id === vehicleId);
   const maintenance = (state.summary.maintenance || []).filter((row) => row.vehicle_id === vehicleId);
   const incidents = (state.summary.incidents || []).filter((row) => row.vehicle_id === vehicleId);
-
+  const serviceHistory = (state.summary.service_history || []).filter((row) => row.vehicle_id === vehicleId);
   const rate = usageRate(logs);
   const deltas = mileageDeltas(logs);
+  const daily = dailyMileage(logs);
   const estimatedMiles = deltas.reduce((total, row) => total + row.delta, 0);
-  const averageUseMiles = deltas.length ? estimatedMiles / deltas.length : 0;
-  const recentUseMiles = deltas[deltas.length - 1]?.delta || 0;
   const checkoutCount = logs.filter((row) => row.log_type === "checkout").length;
+  const returnCount = logs.filter((row) => row.log_type === "return").length;
   const incidentCount = incidents.reduce((total, row) => total + Number(row.incident_count || 0), 0);
-  const attention = maintenance.filter((row) => ["due", "soon", "no_history"].includes(row.status)).length + incidents.length;
+  const maxDailyMiles = daily.length ? Math.max(...daily.map((row) => row.miles)) : 0;
 
-  els.currentMileage.textContent = fmtNumber(latest.last_mileage);
-  els.logCount.textContent = fmtNumber(logs.length);
-  els.rangeMiles.textContent = fmtNumber(Math.max(estimatedMiles, 0));
-  els.attentionCount.textContent = fmtNumber(attention);
-  els.averageUseMiles.textContent = fmtNumber(Math.round(averageUseMiles));
-  els.recentUseMiles.textContent = fmtNumber(recentUseMiles);
-  els.incidentCount.textContent = fmtNumber(incidentCount);
-  els.checkoutCount.textContent = fmtNumber(checkoutCount);
-
-  renderLatest(latest);
-  renderDailyMileageChart(logs, rate);
+  renderCurrentStatus(latest);
+  renderAtGlance(maintenance, incidents, rate);
+  renderMetrics({ estimatedMiles, logs, checkoutCount, returnCount, incidentCount, rate, maxDailyMiles });
+  renderMaintenanceCards(maintenance, latest, rate);
+  renderDailyMileageChart(daily, rate);
   renderMaintenanceRunway(logs, maintenance, rate);
-  renderServiceForecast(maintenance, rate);
   renderServiceForm(vehicleId, latest, maintenance);
-  renderServiceHistory(vehicleId);
-  renderAlerts(vehicleId, maintenance);
-  renderDrivers(drivers);
-  renderMaintenance(maintenance, rate);
-  renderIncidents(incidents);
+  renderServiceHistory(serviceHistory);
+  renderIncidentSummary(incidents);
   renderRecent(logs);
+}
+
+function renderCurrentStatus(latest) {
+  const status = summarizeCurrentStatus(latest);
+  const vehicleLabel = [latest.name, latest.plate].filter(Boolean).join(" - ") || "Selected vehicle";
+  els.currentVehicleLabel.textContent = vehicleLabel;
+  els.currentStatusBadge.className = `pill ${status.className}`;
+  els.currentStatusBadge.textContent = status.label;
+  els.currentStatusDriver.textContent = latest.last_employee_name || "-";
+  els.currentStatusAction.textContent = status.actionLabel === "-" ? "-" : status.actionLabel;
+  els.currentStatusDate.textContent = formatDateTime(latest.last_seen_at);
+  els.currentStatusMileage.textContent = formatMileage(latest.last_mileage);
+}
+
+function renderAtGlance(maintenance, incidents, rate) {
+  const incidentCount = incidents.reduce((total, row) => total + Number(row.incident_count || 0), 0);
+  const urgentMaintenance = sortMaintenanceByUrgency(maintenance)
+    .filter((item) => ["due", "soon", "no_history"].includes(item.status));
+  const nextService = sortMaintenanceByUrgency(maintenance)[0];
+  const nextPrediction = nextService ? predictionForMaintenance(nextService, rate) : null;
+  const rows = [
+    {
+      tone: incidentCount ? "bad" : "ok",
+      title: incidentCount ? `${formatNumber(incidentCount)} open incident${incidentCount === 1 ? "" : "s"}` : "No open incidents",
+      detail: incidentCount ? "Review incident summary" : "All clear",
+    },
+    {
+      tone: urgentMaintenance.length ? "soon" : "ok",
+      title: urgentMaintenance.length ? `${urgentMaintenance.length} maintenance item${urgentMaintenance.length === 1 ? "" : "s"} need attention` : "No urgent maintenance",
+      detail: urgentMaintenance.length ? maintenanceStatusLabel(urgentMaintenance[0].status) : "Nothing due soon",
+    },
+    {
+      tone: "info",
+      title: nextService ? "Next service due" : "Maintenance schedule",
+      detail: nextService ? `${nextService.service_name}: ${nextPrediction.label}` : "Add maintenance records to begin forecasting",
+    },
+    {
+      tone: "info",
+      title: "Data current",
+      detail: formatDateTime(new Date()),
+    },
+  ];
+
+  els.glanceRows.innerHTML = rows.map((row) => `
+    <article class="glance-item">
+      <span class="glance-icon ${row.tone}"></span>
+      <div>
+        <strong>${escapeHtml(row.title)}</strong>
+        <span>${escapeHtml(row.detail)}</span>
+      </div>
+    </article>
+  `).join("");
+}
+
+function renderMetrics({ estimatedMiles, logs, checkoutCount, returnCount, incidentCount, rate, maxDailyMiles }) {
+  const metrics = [
+    ["Miles Driven", formatNumber(Math.max(estimatedMiles, 0)), "MI"],
+    ["Logs", formatNumber(logs.length), "LOG"],
+    ["Check-outs", formatNumber(checkoutCount), "OUT"],
+    ["Returns", formatNumber(returnCount), "IN"],
+    ["Incidents", formatNumber(incidentCount), "INC"],
+    ["Avg Miles / Day", rate ? formatNumber(Math.round(rate.milesPerDay)) : "-", "AVG"],
+    ["Most Miles in a Day", formatNumber(maxDailyMiles), "MAX"],
+  ];
+
+  els.metricTiles.innerHTML = metrics.map(([label, value, icon]) => `
+    <article class="metric-tile">
+      <span class="metric-icon">${icon}</span>
+      <div>
+        <span>${label}</span>
+        <strong>${value}</strong>
+      </div>
+    </article>
+  `).join("");
+}
+
+function renderMaintenanceCards(maintenance, latest, rate) {
+  const sorted = sortMaintenanceByUrgency(maintenance);
+  const visible = state.expanded.maintenance ? sorted : sorted.slice(0, VISIBLE_LIMIT.maintenance);
+  els.toggleMaintenanceBtn.hidden = sorted.length <= VISIBLE_LIMIT.maintenance;
+  els.toggleMaintenanceBtn.textContent = state.expanded.maintenance ? "Show Less" : "View All Maintenance";
+  els.maintenanceCards.innerHTML = cardsOrEmpty(visible.map((item) => {
+    const statusClass = getMaintenanceStatusClass(item.status);
+    const miles = milesRemaining(item, latest.last_mileage);
+    const days = daysRemaining(item);
+    const interval = [
+      item.interval_miles ? `${formatNumber(item.interval_miles)} mi` : "",
+      item.interval_months ? `${formatNumber(item.interval_months)} mo` : "",
+    ].filter(Boolean).join(" / ") || "Needs setup";
+    const prediction = predictionForMaintenance(item, rate);
+    return `
+      <article class="maintenance-card ${statusClass}">
+        <span class="maintenance-status-dot"></span>
+        <div>
+          <strong>${escapeHtml(item.service_name || "Service")}</strong>
+          <span>${escapeHtml(interval)}</span>
+          <small>Forecast: ${escapeHtml(prediction.label)}</small>
+        </div>
+        <div>
+          <strong>${miles === null ? "-" : formatMileage(miles)}</strong>
+          <span>remaining</span>
+        </div>
+        <div>
+          <strong>${days === null ? "-" : `${formatNumber(Math.max(days, 0))} days`}</strong>
+          <span>remaining</span>
+        </div>
+        <span class="pill ${statusClass}">${maintenanceStatusLabel(item.status)}</span>
+      </article>
+    `;
+  }).join(""), "No maintenance schedule yet.");
+}
+
+function renderDailyMileageChart(days, rate) {
+  if (!days.length) {
+    els.dailyChartSummary.innerHTML = "";
+    els.dailyMileageChart.innerHTML = '<div class="empty">No daily mileage data in this range.</div>';
+    return;
+  }
+
+  const width = 760;
+  const height = 250;
+  const margin = { top: 18, right: 18, bottom: 36, left: 58 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const maxMiles = Math.max(...days.map((day) => day.miles), 1);
+  const minTime = days[0].at.getTime();
+  const maxTime = days[days.length - 1].at.getTime();
+  const span = Math.max(maxTime - minTime, 1);
+  const x = (time) => margin.left + ((time - minTime) / span) * plotWidth;
+  const y = (miles) => margin.top + (1 - miles / maxMiles) * plotHeight;
+  const barWidth = Math.max(Math.min(plotWidth / Math.max(days.length, 1) - 3, 16), 4);
+  const ticks = Array.from({ length: 5 }, (_, index) => (maxMiles / 4) * index);
+  const dateTicks = [days[0], days[Math.floor(days.length / 2)], days[days.length - 1]];
+
+  els.dailyChartSummary.innerHTML = `
+    <span>${formatNumber(days.length)} driving days</span>
+    <span>${rate ? `${formatNumber(Math.round(rate.milesPerDay))} miles/day pace` : "Need more data"}</span>
+  `;
+
+  els.dailyMileageChart.innerHTML = `
+    <svg class="mileage-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily miles driven">
+      ${ticks.map((tick) => `
+        <g>
+          <line class="chart-grid" x1="${margin.left}" y1="${y(tick).toFixed(1)}" x2="${width - margin.right}" y2="${y(tick).toFixed(1)}"></line>
+          <text class="chart-axis-label" x="${margin.left - 10}" y="${(y(tick) + 4).toFixed(1)}" text-anchor="end">${formatNumber(Math.round(tick))}</text>
+        </g>
+      `).join("")}
+      ${dateTicks.map((day) => `
+        <text class="chart-axis-label" x="${x(day.at.getTime()).toFixed(1)}" y="${height - 10}" text-anchor="middle">${formatShortDate(day.at)}</text>
+      `).join("")}
+      ${days.map((day) => {
+        const barHeight = Math.max(plotHeight - (y(day.miles) - margin.top), 3);
+        const barX = x(day.at.getTime()) - barWidth / 2;
+        const barY = margin.top + plotHeight - barHeight;
+        return `
+          <rect class="daily-bar" x="${barX.toFixed(1)}" y="${barY.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="3">
+            <title>${formatDate(day.at)} - ${formatNumber(day.miles)} miles</title>
+          </rect>
+        `;
+      }).join("")}
+      <text class="chart-axis-title" x="14" y="${margin.top}" transform="rotate(-90 14 ${margin.top})">Miles</text>
+    </svg>
+  `;
+}
+
+function renderMaintenanceRunway(logs, maintenance, rate) {
+  const mileageLogs = sortedMileageLogs(logs);
+  if (mileageLogs.length < 2 || !rate) {
+    els.chartSummary.innerHTML = "";
+    els.mileageChart.innerHTML = '<div class="empty">Need more mileage history to project the next 12 months.</div>';
+    return;
+  }
+
+  const runwayDays = 365;
+  const runwayEnd = new Date(rate.latestDate.getTime() + runwayDays * 86400000);
+  const projectedEndMileage = rate.latestMileage + rate.milesPerDay * runwayDays;
+  const forecastItems = sortMaintenanceByUrgency(maintenance)
+    .map((item) => ({ item, prediction: predictionForMaintenance(item, rate) }))
+    .filter((entry) => entry.prediction.date && entry.prediction.date <= runwayEnd)
+    .slice(0, 4);
+  const values = [rate.latestMileage, projectedEndMileage, ...forecastItems.map((entry) => Number(entry.item.due_mileage || rate.latestMileage))];
+  const minMileage = Math.min(...values);
+  const maxMileage = Math.max(...values);
+  const padding = Math.max(Math.round((maxMileage - minMileage) * 0.1), 250);
+  const yMin = Math.max(0, minMileage - padding);
+  const yMax = maxMileage + padding;
+  const minTime = rate.latestDate.getTime();
+  const maxTime = runwayEnd.getTime();
+  const width = 760;
+  const height = 250;
+  const margin = { top: 18, right: 24, bottom: 38, left: 64 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const span = Math.max(maxTime - minTime, 1);
+  const x = (time) => margin.left + ((time - minTime) / span) * plotWidth;
+  const y = (mileage) => margin.top + (1 - ((mileage - yMin) / (yMax - yMin || 1))) * plotHeight;
+  const projectionPoints = Array.from({ length: 13 }, (_, index) => {
+    const day = (runwayDays / 12) * index;
+    const time = rate.latestDate.getTime() + day * 86400000;
+    const mileage = rate.latestMileage + rate.milesPerDay * day;
+    return `${x(time).toFixed(1)},${y(mileage).toFixed(1)}`;
+  }).join(" ");
+  const ticks = Array.from({ length: 5 }, (_, index) => yMin + ((yMax - yMin) / 4) * index);
+  const dateTicks = [
+    { at: rate.latestDate },
+    { at: new Date(rate.latestDate.getTime() + 182 * 86400000) },
+    { at: runwayEnd },
+  ];
+
+  els.chartSummary.innerHTML = `
+    <span>${formatNumber(Math.round(rate.milesPerDay * 365))} projected miles/year</span>
+    <span>${forecastItems.length ? `${forecastItems.length} service markers` : "No service projected"}</span>
+  `;
+
+  els.mileageChart.innerHTML = `
+    <svg class="mileage-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Projected mileage and maintenance over next 12 months">
+      ${ticks.map((tick) => `
+        <g>
+          <line class="chart-grid" x1="${margin.left}" y1="${y(tick).toFixed(1)}" x2="${width - margin.right}" y2="${y(tick).toFixed(1)}"></line>
+          <text class="chart-axis-label" x="${margin.left - 10}" y="${(y(tick) + 4).toFixed(1)}" text-anchor="end">${formatNumber(Math.round(tick))}</text>
+        </g>
+      `).join("")}
+      ${dateTicks.map((row) => `
+        <text class="chart-axis-label" x="${x(row.at.getTime()).toFixed(1)}" y="${height - 10}" text-anchor="middle">${formatShortDate(row.at)}</text>
+      `).join("")}
+      <polyline class="runway-line" points="${projectionPoints}"></polyline>
+      <circle class="current-mileage-point" cx="${x(rate.latestDate.getTime()).toFixed(1)}" cy="${y(rate.latestMileage).toFixed(1)}" r="6">
+        <title>Current mileage - ${formatMileage(rate.latestMileage)}</title>
+      </circle>
+      ${forecastItems.map(({ item, prediction }, index) => {
+        const markerX = x(prediction.date.getTime());
+        const markerY = y(Number(item.due_mileage || rate.latestMileage));
+        const labelY = index % 2 === 0 ? markerY - 12 : markerY + 18;
+        return `
+          <g>
+            <line class="service-marker-line" x1="${markerX.toFixed(1)}" y1="${margin.top}" x2="${markerX.toFixed(1)}" y2="${height - margin.bottom}"></line>
+            <circle class="service-marker ${getMaintenanceStatusClass(item.status)}" cx="${markerX.toFixed(1)}" cy="${markerY.toFixed(1)}" r="5">
+              <title>${escapeHtml(item.service_name)} - ${escapeHtml(prediction.label)}</title>
+            </circle>
+            <text class="service-marker-label" x="${markerX.toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle">${escapeHtml(item.service_name.split(" ")[0])}</text>
+          </g>
+        `;
+      }).join("")}
+      <text class="chart-axis-title" x="14" y="${margin.top}" transform="rotate(-90 14 ${margin.top})">Mileage</text>
+    </svg>
+  `;
+}
+
+function renderServiceForm(vehicleId, latest, maintenance) {
+  const current = els.serviceName.value;
+  const serviceNames = [...new Set(maintenance.map((item) => item.service_name).filter(Boolean))].sort();
+  els.serviceName.innerHTML = serviceNames.map((serviceName) => (
+    `<option value="${escapeHtml(serviceName)}">${escapeHtml(serviceName)}</option>`
+  )).join("");
+  if (serviceNames.includes(current)) els.serviceName.value = current;
+
+  if (!els.serviceDate.value) els.serviceDate.value = todayValue();
+  if (!els.serviceMileage.value && latest.last_mileage) {
+    els.serviceMileage.value = latest.last_mileage;
+  }
+
+  els.saveServiceBtn.disabled = !vehicleId || !serviceNames.length;
+}
+
+function renderServiceHistory(history) {
+  const sorted = [...history].sort((a, b) => new Date(b.service_date) - new Date(a.service_date));
+  const visible = state.expanded.services ? sorted : sorted.slice(0, VISIBLE_LIMIT.services);
+  els.toggleServicesBtn.hidden = sorted.length <= VISIBLE_LIMIT.services;
+  els.toggleServicesBtn.textContent = state.expanded.services ? "Show Less" : "View All Services";
+  els.serviceHistoryRows.innerHTML = cardsOrEmpty(visible.map((event) => `
+    <article class="forecast-item">
+      <div>
+        <div class="alert-title">${escapeHtml(event.service_name)}</div>
+        <div class="subtle">${formatDate(event.service_date)} - ${formatMileage(event.mileage)}</div>
+        <div class="subtle">${escapeHtml(event.performed_by || "")}${event.cost ? ` - $${Number(event.cost).toFixed(2)}` : ""}</div>
+        ${event.notes ? `<div class="alert-note">${escapeHtml(event.notes)}</div>` : ""}
+      </div>
+    </article>
+  `).join(""), "No services logged yet.");
 }
 
 async function saveService() {
@@ -313,323 +672,78 @@ async function saveService() {
   els.serviceNotes.value = "";
   setStatus(els.serviceStatus, "Service saved.");
   await loadDashboard();
+  closeServiceModal();
 }
 
-async function markAlertReviewed(alertId) {
-  const { error } = await state.supabase.rpc("mark_alert_reviewed", { alert_id: alertId });
-  if (error) throw error;
-  await loadDashboard();
-}
-
-function renderAlerts(vehicleId, maintenance) {
-  const alerts = (state.summary.alerts || []).filter((row) => !row.vehicle_id || row.vehicle_id === vehicleId);
-  const maintenanceAttention = maintenance.filter((row) => ["due", "soon", "no_history"].includes(row.status));
-
-  els.alertRows.innerHTML = cardsOrEmpty(alerts.slice(0, 12).map((alert) => {
-    const payload = alert.payload || {};
-    const action = payload.log_type === "return" ? "Checked back in" : "Checked out";
-    const statusClass = alert.status === "failed" ? "due" : "soon";
-    return `
-      <article class="alert-item">
-        <div>
-          <div class="alert-title">${action}: ${payload.employee_name || "Driver"}</div>
-          <div class="subtle">${payload.vehicle || ""}</div>
-          <div class="subtle">${fmtDateTime(alert.created_at)} · ${fmtNumber(payload.mileage)} mi</div>
-          ${payload.notes ? `<div class="alert-note">${payload.notes}</div>` : ""}
+function renderIncidentSummary(incidents) {
+  const incidentCount = incidents.reduce((total, row) => total + Number(row.incident_count || 0), 0);
+  if (!incidentCount) {
+    els.toggleIncidentsBtn.hidden = true;
+    els.incidentSummary.innerHTML = `
+      <div class="empty-state good-empty">
+        <span class="empty-check">OK</span>
+        <strong>No incidents in this time range</strong>
+        <p>Great job keeping the vehicle in good shape.</p>
+        <div class="severity-grid">
+          <span><strong>0</strong><small>High</small></span>
+          <span><strong>0</strong><small>Medium</small></span>
+          <span><strong>0</strong><small>Low</small></span>
+          <span><strong>0</strong><small>Info</small></span>
         </div>
-        <div class="alert-actions">
-          <span class="pill ${statusClass}">${alert.status}</span>
-          ${alert.status === "pending" ? `<button class="secondary compact" data-alert-id="${alert.id}" type="button">Reviewed</button>` : ""}
-        </div>
-      </article>
-    `;
-  }).join(""));
-
-  els.maintenanceAlertRows.innerHTML = cardsOrEmpty(maintenanceAttention.map((item) => {
-    const due = [
-      item.due_mileage ? `${fmtNumber(item.due_mileage)} mi` : "",
-      item.due_date ? fmtDate(item.due_date) : "",
-    ].filter(Boolean).join(" / ") || "Add service history";
-    return `
-      <article class="alert-item">
-        <div>
-          <div class="alert-title">${item.service_name}</div>
-          <div class="subtle">${item.vehicle_name || ""}</div>
-          <div class="subtle">Due: ${due}</div>
-        </div>
-        <span class="pill ${item.status}">${String(item.status || "ok").replace("_", " ")}</span>
-      </article>
-    `;
-  }).join(""));
-}
-
-function renderLatest(latest) {
-  els.latestStatus.innerHTML = [
-    ["Vehicle", [latest.name, latest.plate].filter(Boolean).join(" - ")],
-    ["Last action", latest.last_log_type],
-    ["Last driver", latest.last_employee_name],
-    ["Last mileage", fmtNumber(latest.last_mileage)],
-    ["Last seen", fmtDate(latest.last_seen_at)],
-    ["Notes", latest.last_notes || "-"],
-  ].map(([label, value]) => `<tr><th>${label}</th><td>${value || "-"}</td></tr>`).join("");
-}
-
-function dailyMileage(logs) {
-  const deltas = mileageDeltas(logs);
-  const byDate = new Map();
-  deltas.forEach((row) => {
-    const key = row.created_at.slice(0, 10);
-    byDate.set(key, (byDate.get(key) || 0) + row.delta);
-  });
-  return [...byDate.entries()]
-    .map(([date, miles]) => ({ date, miles, at: new Date(`${date}T00:00:00`) }))
-    .sort((a, b) => a.at - b.at);
-}
-
-function renderDailyMileageChart(logs, rate) {
-  const days = dailyMileage(logs);
-  if (!days.length) {
-    els.dailyChartSummary.innerHTML = "";
-    els.dailyMileageChart.innerHTML = '<div class="empty">No daily mileage data in this range.</div>';
-    return;
-  }
-
-  const width = 760;
-  const height = 250;
-  const margin = { top: 18, right: 18, bottom: 36, left: 64 };
-  const plotWidth = width - margin.left - margin.right;
-  const plotHeight = height - margin.top - margin.bottom;
-  const maxMiles = Math.max(...days.map((day) => day.miles), 1);
-  const minTime = days[0].at.getTime();
-  const maxTime = days[days.length - 1].at.getTime();
-  const span = Math.max(maxTime - minTime, 1);
-  const x = (time) => margin.left + ((time - minTime) / span) * plotWidth;
-  const y = (miles) => margin.top + (1 - miles / maxMiles) * plotHeight;
-  const barWidth = Math.max(Math.min(plotWidth / Math.max(days.length, 1) - 3, 18), 5);
-  const ticks = Array.from({ length: 5 }, (_, index) => (maxMiles / 4) * index);
-  const dateTicks = [days[0], days[Math.floor(days.length / 2)], days[days.length - 1]];
-
-  els.dailyChartSummary.innerHTML = `
-    <span>${fmtNumber(days.length)} driving days in range</span>
-    <span>${rate ? `${fmtNumber(Math.round(rate.milesPerDay))} miles/day pace` : ""}</span>
-  `;
-
-  els.dailyMileageChart.innerHTML = `
-    <svg class="mileage-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily miles driven">
-      ${ticks.map((tick) => `
-        <g>
-          <line class="chart-grid" x1="${margin.left}" y1="${y(tick).toFixed(1)}" x2="${width - margin.right}" y2="${y(tick).toFixed(1)}"></line>
-          <text class="chart-axis-label" x="${margin.left - 10}" y="${(y(tick) + 4).toFixed(1)}" text-anchor="end">${fmtNumber(Math.round(tick))}</text>
-        </g>
-      `).join("")}
-      ${dateTicks.map((day) => `
-        <text class="chart-axis-label" x="${x(day.at.getTime()).toFixed(1)}" y="${height - 10}" text-anchor="middle">${fmtShortDate(day.at)}</text>
-      `).join("")}
-      ${days.map((day) => {
-        const barHeight = Math.max(plotHeight - (y(day.miles) - margin.top), 3);
-        const barX = x(day.at.getTime()) - barWidth / 2;
-        const barY = margin.top + plotHeight - barHeight;
-        return `
-          <rect class="daily-bar" x="${barX.toFixed(1)}" y="${barY.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="3">
-            <title>${fmtDate(day.at)} · ${fmtNumber(day.miles)} miles</title>
-          </rect>
-        `;
-      }).join("")}
-      <text class="chart-axis-title" x="14" y="${margin.top}" transform="rotate(-90 14 ${margin.top})">Miles/day</text>
-    </svg>
-  `;
-}
-
-function renderMaintenanceRunway(logs, maintenance, rate) {
-  const mileageLogs = sortedMileageLogs(logs);
-  if (mileageLogs.length < 2 || !rate) {
-    els.chartSummary.innerHTML = "";
-    els.mileageChart.innerHTML = '<div class="empty">Need more mileage history to project the next 12 months.</div>';
-    return;
-  }
-
-  const runwayDays = 365;
-  const runwayEnd = new Date(rate.latestDate.getTime() + runwayDays * 86400000);
-  const projectedEndMileage = rate.latestMileage + rate.milesPerDay * runwayDays;
-  const forecastItems = maintenance
-    .map((item) => ({ item, prediction: predictionForMaintenance(item, rate) }))
-    .filter((entry) => entry.prediction.date && entry.prediction.date <= runwayEnd)
-    .sort((a, b) => a.prediction.date - b.prediction.date);
-  const values = [rate.latestMileage, projectedEndMileage, ...forecastItems.map((entry) => Number(entry.item.due_mileage || rate.latestMileage))];
-  const minMileage = Math.min(...values);
-  const maxMileage = Math.max(...values);
-  const padding = Math.max(Math.round((maxMileage - minMileage) * 0.1), 250);
-  const yMin = Math.max(0, minMileage - padding);
-  const yMax = maxMileage + padding;
-  const minTime = rate.latestDate.getTime();
-  const maxTime = runwayEnd.getTime();
-  const width = 760;
-  const height = 280;
-  const margin = { top: 18, right: 24, bottom: 38, left: 72 };
-  const plotWidth = width - margin.left - margin.right;
-  const plotHeight = height - margin.top - margin.bottom;
-  const span = Math.max(maxTime - minTime, 1);
-  const x = (time) => margin.left + ((time - minTime) / span) * plotWidth;
-  const y = (mileage) => margin.top + (1 - ((mileage - yMin) / (yMax - yMin || 1))) * plotHeight;
-  const projectionPoints = Array.from({ length: 13 }, (_, index) => {
-    const day = (runwayDays / 12) * index;
-    const time = rate.latestDate.getTime() + day * 86400000;
-    const mileage = rate.latestMileage + rate.milesPerDay * day;
-    return `${x(time).toFixed(1)},${y(mileage).toFixed(1)}`;
-  }).join(" ");
-  const ticks = Array.from({ length: 5 }, (_, index) => yMin + ((yMax - yMin) / 4) * index);
-  const dateTicks = [
-    { at: rate.latestDate },
-    { at: new Date(rate.latestDate.getTime() + 182 * 86400000) },
-    { at: runwayEnd },
-  ];
-
-  els.chartSummary.innerHTML = `
-    <span>12-month runway</span>
-    <span>${fmtNumber(Math.round(rate.milesPerDay * 365))} projected miles/year</span>
-    <span>${forecastItems.length ? `${forecastItems.length} service markers` : "No service projected in next 12 months"}</span>
-  `;
-
-  els.mileageChart.innerHTML = `
-    <svg class="mileage-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Projected mileage and maintenance over next 12 months">
-      ${ticks.map((tick) => `
-        <g>
-          <line class="chart-grid" x1="${margin.left}" y1="${y(tick).toFixed(1)}" x2="${width - margin.right}" y2="${y(tick).toFixed(1)}"></line>
-          <text class="chart-axis-label" x="${margin.left - 10}" y="${(y(tick) + 4).toFixed(1)}" text-anchor="end">${fmtNumber(Math.round(tick))}</text>
-        </g>
-      `).join("")}
-      ${dateTicks.map((row) => `
-        <text class="chart-axis-label" x="${x(row.at.getTime()).toFixed(1)}" y="${height - 10}" text-anchor="middle">${fmtShortDate(row.at)}</text>
-      `).join("")}
-      <polyline class="runway-line" points="${projectionPoints}"></polyline>
-      ${forecastItems.map(({ item, prediction }) => `
-        <g>
-          <line class="service-marker-line" x1="${x(prediction.date.getTime()).toFixed(1)}" y1="${margin.top}" x2="${x(prediction.date.getTime()).toFixed(1)}" y2="${height - margin.bottom}"></line>
-          <circle class="service-marker ${item.status}" cx="${x(prediction.date.getTime()).toFixed(1)}" cy="${y(Number(item.due_mileage || rate.latestMileage)).toFixed(1)}" r="5">
-            <title>${item.service_name} · ${prediction.label}</title>
-          </circle>
-          <text class="service-marker-label" x="${x(prediction.date.getTime()).toFixed(1)}" y="${(y(Number(item.due_mileage || rate.latestMileage)) - 10).toFixed(1)}" text-anchor="middle">${item.service_name.split(" ")[0]}</text>
-        </g>
-      `).join("")}
-      <text class="chart-axis-title" x="14" y="${margin.top}" transform="rotate(-90 14 ${margin.top})">Mileage</text>
-    </svg>
-  `;
-}
-
-function renderServiceForecast(maintenance, rate) {
-  const forecast = maintenance
-    .map((item) => ({ item, prediction: predictionForMaintenance(item, rate) }))
-    .sort((a, b) => {
-      if (a.item.status !== b.item.status) {
-        const order = { due: 1, soon: 2, no_history: 3, ok: 4 };
-        return (order[a.item.status] || 5) - (order[b.item.status] || 5);
-      }
-      if (a.prediction.date && b.prediction.date) return a.prediction.date - b.prediction.date;
-      if (a.prediction.date) return -1;
-      if (b.prediction.date) return 1;
-      return a.item.service_name.localeCompare(b.item.service_name);
-    })
-    .slice(0, 8);
-
-  els.serviceForecastRows.innerHTML = cardsOrEmpty(forecast.map(({ item, prediction }) => {
-    const due = [
-      item.due_mileage ? `${fmtNumber(item.due_mileage)} mi` : "",
-      item.due_date ? fmtDate(item.due_date) : "",
-    ].filter(Boolean).join(" / ") || "Add service history";
-    return `
-      <article class="forecast-item">
-        <div>
-          <div class="alert-title">${item.service_name}</div>
-          <div class="subtle">Due: ${due}</div>
-          <div class="subtle">Forecast: ${prediction.label}</div>
-        </div>
-        <span class="pill ${item.status}">${String(item.status || "ok").replace("_", " ")}</span>
-      </article>
-    `;
-  }).join(""));
-}
-
-function renderServiceForm(vehicleId, latest, maintenance) {
-  const current = els.serviceName.value;
-  const serviceNames = [...new Set(maintenance.map((item) => item.service_name).filter(Boolean))].sort();
-  els.serviceName.innerHTML = serviceNames.map((serviceName) => (
-    `<option value="${serviceName}">${serviceName}</option>`
-  )).join("");
-  if (serviceNames.includes(current)) els.serviceName.value = current;
-
-  if (!els.serviceDate.value) els.serviceDate.value = todayValue();
-  if (!els.serviceMileage.value && latest.last_mileage) {
-    els.serviceMileage.value = latest.last_mileage;
-  }
-
-  els.saveServiceBtn.disabled = !vehicleId || !serviceNames.length;
-}
-
-function renderServiceHistory(vehicleId) {
-  const history = (state.summary.service_history || []).filter((row) => row.vehicle_id === vehicleId);
-  els.serviceHistoryRows.innerHTML = cardsOrEmpty(history.slice(0, 10).map((event) => `
-    <article class="forecast-item">
-      <div>
-        <div class="alert-title">${event.service_name}</div>
-        <div class="subtle">${fmtDate(event.service_date)} · ${fmtNumber(event.mileage)} mi</div>
-        <div class="subtle">${event.performed_by || ""}${event.cost ? ` · $${Number(event.cost).toFixed(2)}` : ""}</div>
-        ${event.notes ? `<div class="alert-note">${event.notes}</div>` : ""}
       </div>
-    </article>
-  `).join(""));
-}
-
-function renderDrivers(drivers) {
-  els.driverRows.innerHTML = rowsOrEmpty(drivers.slice(0, 12).map((row) => `
-    <tr>
-      <td>${row.employee_name || "-"}</td>
-      <td>${fmtNumber(row.log_count)}</td>
-      <td>${fmtNumber(row.checkout_count)}</td>
-      <td>${fmtNumber(row.return_count)}</td>
-      <td>${fmtDate(row.last_log_at)}</td>
-    </tr>
-  `).join(""), 5);
-}
-
-function renderMaintenance(maintenance, rate) {
-  els.maintenanceRows.innerHTML = rowsOrEmpty(maintenance.map((row) => {
-    const due = [
-      row.due_mileage ? `${fmtNumber(row.due_mileage)} mi` : "",
-      row.due_date ? fmtDate(row.due_date) : "",
-    ].filter(Boolean).join(" / ") || "Add service history";
-    const prediction = predictionForMaintenance(row, rate);
-    return `
-      <tr>
-        <td>${row.service_name}</td>
-        <td><span class="pill ${row.status}">${String(row.status || "ok").replace("_", " ")}</span></td>
-        <td>${due}</td>
-        <td>${prediction.label}</td>
-      </tr>
     `;
-  }).join(""), 4);
-}
+    return;
+  }
 
-function renderIncidents(incidents) {
-  els.incidentRows.innerHTML = rowsOrEmpty(incidents.map((row) => `
-    <tr>
-      <td>${row.incident_type || "-"}</td>
-      <td>${row.severity || "-"}</td>
-      <td>${fmtNumber(row.incident_count)}</td>
-      <td>${fmtDate(row.last_incident_at)}</td>
-    </tr>
-  `).join(""), 4);
+  const sorted = [...incidents].sort((a, b) => new Date(b.last_incident_at) - new Date(a.last_incident_at));
+  const visible = state.expanded.incidents ? sorted : sorted.slice(0, 4);
+  els.toggleIncidentsBtn.hidden = sorted.length <= 4;
+  els.toggleIncidentsBtn.textContent = state.expanded.incidents ? "Show Less" : "View All Incidents";
+  els.incidentSummary.innerHTML = `
+    <div class="incident-counts">
+      ${visible.map((row) => `
+        <article class="incident-row">
+          <strong>${escapeHtml(row.incident_type || "Incident")}</strong>
+          <span>${escapeHtml(row.severity || "info")} - ${formatNumber(row.incident_count)}</span>
+          <small>Last: ${formatDate(row.last_incident_at)}</small>
+        </article>
+      `).join("")}
+    </div>
+  `;
 }
 
 function renderRecent(logs) {
-  els.recentRows.innerHTML = rowsOrEmpty(logs.slice(0, 30).map((row) => `
-    <tr>
-      <td>${fmtDate(row.created_at)}</td>
-      <td>${row.log_type || "-"}</td>
-      <td>${row.employee_name || "-"}</td>
-      <td>${fmtNumber(row.mileage)}</td>
-      <td>${row.notes || ""}</td>
-    </tr>
-  `).join(""), 5);
+  const visible = state.expanded.logs ? logs : logs.slice(0, VISIBLE_LIMIT.logs);
+  els.toggleLogsBtn.hidden = logs.length <= VISIBLE_LIMIT.logs;
+  els.toggleLogsBtn.textContent = state.expanded.logs ? "Show Less" : "View All Logs";
+  els.recentRows.innerHTML = visible.length ? visible.map((row) => {
+    const actionClass = row.log_type === "checkout" ? "info" : "ok";
+    const incident = row.incident_count || row.incident_type || row.severity ? "Yes" : "-";
+    return `
+      <tr>
+        <td data-label="Date / Time">${formatDateTime(row.created_at)}</td>
+        <td data-label="Action"><span class="pill ${actionClass}">${escapeHtml(row.log_type || "-")}</span></td>
+        <td data-label="Driver">${escapeHtml(row.employee_name || "-")}</td>
+        <td data-label="Mileage">${formatMileage(row.mileage)}</td>
+        <td data-label="Incident">${escapeHtml(incident)}</td>
+      </tr>
+    `;
+  }).join("") : '<tr><td colspan="5" class="empty">No logs in this time range.</td></tr>';
+}
+
+function openServiceModal() {
+  els.serviceModal.hidden = false;
+  els.serviceStatus.textContent = "";
+  els.serviceName.focus();
+}
+
+function closeServiceModal() {
+  els.serviceModal.hidden = true;
+}
+
+function toggleExpanded(key) {
+  state.expanded[key] = !state.expanded[key];
+  renderDashboard();
 }
 
 els.signInBtn.addEventListener("click", () => {
@@ -643,6 +757,7 @@ els.magicLinkBtn.addEventListener("click", () => {
 els.signOutBtn.addEventListener("click", async () => {
   await state.supabase.auth.signOut();
   state.summary = null;
+  closeServiceModal();
   setStatus(els.authStatus, "Signed out.");
 });
 
@@ -650,16 +765,23 @@ els.refreshBtn.addEventListener("click", () => {
   loadDashboard().catch((error) => setStatus(els.dashboardStatus, error.message, true));
 });
 
+els.openServiceBtn.addEventListener("click", openServiceModal);
+els.closeServiceBtn.addEventListener("click", closeServiceModal);
+els.serviceModal.addEventListener("click", (event) => {
+  if (event.target.closest("[data-close-service]")) closeServiceModal();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !els.serviceModal.hidden) closeServiceModal();
+});
+
 els.saveServiceBtn.addEventListener("click", () => {
   saveService().catch((error) => setStatus(els.serviceStatus, error.message, true));
 });
 
-els.alertRows.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-alert-id]");
-  if (!button) return;
-  button.disabled = true;
-  markAlertReviewed(button.dataset.alertId).catch((error) => setStatus(els.dashboardStatus, error.message, true));
-});
+els.toggleMaintenanceBtn.addEventListener("click", () => toggleExpanded("maintenance"));
+els.toggleLogsBtn.addEventListener("click", () => toggleExpanded("logs"));
+els.toggleServicesBtn.addEventListener("click", () => toggleExpanded("services"));
+els.toggleIncidentsBtn.addEventListener("click", () => toggleExpanded("incidents"));
 
 els.vehicleSelect.addEventListener("change", renderDashboard);
 els.rangeSelect.addEventListener("change", () => {

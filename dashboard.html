@@ -6,20 +6,22 @@
   <title>Nudge Fleet Owner Dashboard</title>
   <link rel="stylesheet" href="style.css" />
 </head>
-<body>
-  <header>
-    <div class="header-inner header-row">
+<body class="dashboard-body">
+  <header class="dashboard-header">
+    <div class="header-inner dashboard-header-row">
       <div class="brand">
         <img src="SkyRun_Vertical_Full_Color_brian_head.png" alt="SkyRun Brian Head" />
         <div>
           <h1>Nudge Fleet</h1>
-          <div class="subtle">Owner dashboard for usage, mileage, incidents, and maintenance.</div>
+          <div class="subtle">Vehicle maintenance &amp; usage dashboard</div>
         </div>
       </div>
-      <a class="button-link" href="#serviceSection">Log Service</a>
-      <a class="button-link" href="index.html">Vehicle Log</a>
-      <button class="secondary" id="refreshBtn" type="button" hidden>Refresh</button>
-      <button id="signOutBtn" type="button" hidden>Sign Out</button>
+      <nav class="dashboard-actions" aria-label="Dashboard actions">
+        <button class="success" id="openServiceBtn" type="button" hidden>Log Service</button>
+        <a class="button-link primary-link" href="index.html">Vehicle Log</a>
+        <button class="secondary dark-button" id="refreshBtn" type="button" hidden>Refresh</button>
+        <button class="dark-button" id="signOutBtn" type="button" hidden>Sign Out</button>
+      </nav>
     </div>
   </header>
 
@@ -58,13 +60,13 @@
     </section>
 
     <section id="appPanel" hidden>
-      <section class="toolbar">
+      <section class="dashboard-toolbar">
         <div>
           <label for="vehicleSelect">Vehicle</label>
           <select id="vehicleSelect"></select>
         </div>
         <div>
-          <label for="rangeSelect">Reporting range</label>
+          <label for="rangeSelect">Time Range</label>
           <select id="rangeSelect">
             <option value="30">Last 30 days</option>
             <option value="90" selected>Last 90 days</option>
@@ -72,184 +74,163 @@
             <option value="all">All time</option>
           </select>
         </div>
+        <div class="dashboard-updated" id="dashboardStatus">Loading dashboard...</div>
       </section>
 
-      <div class="status" id="dashboardStatus">Loading dashboard...</div>
-
-      <section class="split" id="serviceSection">
-        <div class="panel">
-          <h2>Log Service</h2>
-          <div class="service-form">
-            <div>
-              <label for="serviceName">Service type</label>
-              <select id="serviceName"></select>
-            </div>
-            <div>
-              <label for="serviceMileage">Mileage</label>
-              <input id="serviceMileage" type="number" min="0" inputmode="numeric" placeholder="103293" />
-            </div>
-            <div>
-              <label for="serviceDate">Date</label>
-              <input id="serviceDate" type="date" />
-            </div>
-            <div>
-              <label for="servicePerformedBy">Performed by</label>
-              <input id="servicePerformedBy" type="text" placeholder="Toyota / shop / staff" />
-            </div>
-            <div>
-              <label for="serviceCost">Cost</label>
-              <input id="serviceCost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="optional" />
-            </div>
-            <div>
-              <label for="serviceNotes">Notes</label>
-              <input id="serviceNotes" type="text" placeholder="Invoice notes, fluids, filters, etc." />
-            </div>
+      <section class="dashboard-grid status-layout">
+        <article class="panel hero-status">
+          <div class="vehicle-photo" aria-hidden="true">
+            <span>2016</span>
+            <strong>Highlander</strong>
           </div>
-          <button id="saveServiceBtn" type="button">Save Service</button>
-          <div class="status" id="serviceStatus"></div>
-        </div>
-        <div class="panel">
-          <h2>Recent Services</h2>
-          <div class="forecast-list" id="serviceHistoryRows"></div>
-        </div>
+          <div class="hero-status-body">
+            <div class="section-heading">
+              <h2>Current Status</h2>
+              <span class="pill" id="currentStatusBadge">-</span>
+            </div>
+            <div class="vehicle-name" id="currentVehicleLabel">-</div>
+            <dl class="status-facts">
+              <div>
+                <dt>Last Driver</dt>
+                <dd id="currentStatusDriver">-</dd>
+              </div>
+              <div>
+                <dt>Last Action</dt>
+                <dd id="currentStatusAction">-</dd>
+              </div>
+              <div>
+                <dt>Last Action Date</dt>
+                <dd id="currentStatusDate">-</dd>
+              </div>
+              <div>
+                <dt>Last Mileage</dt>
+                <dd id="currentStatusMileage">-</dd>
+              </div>
+            </dl>
+          </div>
+        </article>
+
+        <article class="panel glance-panel">
+          <h2>At a Glance</h2>
+          <div class="glance-list" id="glanceRows"></div>
+        </article>
       </section>
 
-      <section class="split">
-        <div class="panel">
-          <h2>Alerts</h2>
-          <div class="alert-list" id="alertRows"></div>
-        </div>
-        <div class="panel">
-          <h2>Maintenance Attention</h2>
-          <div class="alert-list" id="maintenanceAlertRows"></div>
-        </div>
+      <section class="dashboard-grid dashboard-main">
+        <article class="panel">
+          <div class="section-heading">
+            <h2>Maintenance Status</h2>
+            <button class="secondary compact" id="toggleMaintenanceBtn" type="button">View All Maintenance</button>
+          </div>
+          <div class="maintenance-card-list" id="maintenanceCards"></div>
+          <div class="legend">
+            <span><i class="dot ok-dot"></i> OK</span>
+            <span><i class="dot soon-dot"></i> Due Soon</span>
+            <span><i class="dot due-dot"></i> Overdue</span>
+            <span><i class="dot setup-dot"></i> Needs Setup</span>
+          </div>
+        </article>
+
+        <article class="panel">
+          <h2>Key Metrics</h2>
+          <div class="metric-grid" id="metricTiles"></div>
+        </article>
       </section>
 
-      <section class="cards">
-        <div class="metric">
-          <div class="subtle">Current mileage</div>
-          <div class="value" id="currentMileage">-</div>
-        </div>
-        <div class="metric">
-          <div class="subtle">Logs in range</div>
-          <div class="value" id="logCount">-</div>
-        </div>
-        <div class="metric">
-          <div class="subtle">Miles in range</div>
-          <div class="value" id="rangeMiles">-</div>
-        </div>
-        <div class="metric">
-          <div class="subtle">Open attention items</div>
-          <div class="value" id="attentionCount">-</div>
-        </div>
-        <div class="metric">
-          <div class="subtle">Average miles/use</div>
-          <div class="value" id="averageUseMiles">-</div>
-        </div>
-        <div class="metric">
-          <div class="subtle">Most recent use</div>
-          <div class="value" id="recentUseMiles">-</div>
-        </div>
-        <div class="metric">
-          <div class="subtle">Incidents in range</div>
-          <div class="value" id="incidentCount">-</div>
-        </div>
-        <div class="metric">
-          <div class="subtle">Check-outs</div>
-          <div class="value" id="checkoutCount">-</div>
-        </div>
-      </section>
-
-      <section class="split">
-        <div class="panel">
-          <h2>Daily Miles</h2>
+      <section class="dashboard-grid chart-layout">
+        <article class="panel chart-panel">
+          <div class="section-heading">
+            <h2>Daily Miles</h2>
+          </div>
           <div class="chart-summary" id="dailyChartSummary"></div>
-          <div class="chart" id="dailyMileageChart"></div>
-        </div>
-        <div class="panel">
-          <h2>Next Service Forecast</h2>
-          <div class="forecast-list" id="serviceForecastRows"></div>
-        </div>
-      </section>
+          <div class="chart compact-chart" id="dailyMileageChart"></div>
+        </article>
 
-      <section class="panel">
+        <article class="panel chart-panel">
           <h2>12-Month Maintenance Runway</h2>
           <div class="chart-summary" id="chartSummary"></div>
-          <div class="chart" id="mileageChart"></div>
+          <div class="chart compact-chart" id="mileageChart"></div>
+        </article>
       </section>
 
-      <section class="panel">
-        <h2>Latest Status</h2>
-        <table>
-          <tbody id="latestStatus"></tbody>
-        </table>
+      <section class="dashboard-grid lower-layout">
+        <article class="panel recent-panel">
+          <div class="section-heading">
+            <h2>Recent Activity</h2>
+            <button class="secondary compact" id="toggleLogsBtn" type="button">View All Logs</button>
+          </div>
+          <div class="responsive-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date / Time</th>
+                  <th>Action</th>
+                  <th>Driver</th>
+                  <th>Mileage</th>
+                  <th>Incident</th>
+                </tr>
+              </thead>
+              <tbody id="recentRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="section-heading">
+            <h2>Incident Summary</h2>
+            <button class="secondary compact" id="toggleIncidentsBtn" type="button">View All Incidents</button>
+          </div>
+          <div id="incidentSummary"></div>
+        </article>
       </section>
 
-      <section class="split">
-        <div class="panel">
-          <h2>Driver Activity</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Driver</th>
-                <th>Logs</th>
-                <th>Check-outs</th>
-                <th>Returns</th>
-                <th>Last use</th>
-              </tr>
-            </thead>
-            <tbody id="driverRows"></tbody>
-          </table>
+      <section class="panel services-panel">
+        <div class="section-heading">
+          <h2>Recent Services</h2>
+          <button class="secondary compact" id="toggleServicesBtn" type="button">View All Services</button>
         </div>
-        <div class="panel">
-          <h2>Maintenance</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Service</th>
-                <th>Status</th>
-                <th>Due</th>
-                <th>Predicted</th>
-              </tr>
-            </thead>
-            <tbody id="maintenanceRows"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="split">
-        <div class="panel">
-          <h2>Recent Logs</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Action</th>
-                <th>Driver</th>
-                <th>Mileage</th>
-                <th>Notes</th>
-              </tr>
-            </thead>
-            <tbody id="recentRows"></tbody>
-          </table>
-        </div>
-        <div class="panel">
-          <h2>Incident Summary</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Severity</th>
-                <th>Count</th>
-                <th>Last</th>
-              </tr>
-            </thead>
-            <tbody id="incidentRows"></tbody>
-          </table>
-        </div>
+        <div class="forecast-list" id="serviceHistoryRows"></div>
       </section>
     </section>
   </main>
+
+  <div class="modal-shell" id="serviceModal" hidden>
+    <div class="modal-backdrop" data-close-service></div>
+    <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="serviceModalTitle">
+      <div class="section-heading">
+        <h2 id="serviceModalTitle">Log Service</h2>
+        <button class="secondary compact" id="closeServiceBtn" type="button">Close</button>
+      </div>
+      <div class="service-form">
+        <div>
+          <label for="serviceName">Service type</label>
+          <select id="serviceName"></select>
+        </div>
+        <div>
+          <label for="serviceMileage">Mileage</label>
+          <input id="serviceMileage" type="number" min="0" inputmode="numeric" placeholder="103293" />
+        </div>
+        <div>
+          <label for="serviceDate">Date</label>
+          <input id="serviceDate" type="date" />
+        </div>
+        <div>
+          <label for="servicePerformedBy">Performed by</label>
+          <input id="servicePerformedBy" type="text" placeholder="Toyota / shop / staff" />
+        </div>
+        <div>
+          <label for="serviceCost">Cost</label>
+          <input id="serviceCost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="optional" />
+        </div>
+        <div>
+          <label for="serviceNotes">Notes</label>
+          <input id="serviceNotes" type="text" placeholder="Invoice notes, fluids, filters, etc." />
+        </div>
+      </div>
+      <button id="saveServiceBtn" type="button">Save Service</button>
+      <div class="status" id="serviceStatus"></div>
+    </section>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script type="module" src="js/ownerApp.js"></script>
