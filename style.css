@@ -45,7 +45,7 @@ main {
 }
 
 .header-row {
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto auto auto auto;
   align-items: center;
 }
 
@@ -146,6 +146,10 @@ main { padding: 18px 0 28px; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 10px;
   margin-bottom: 12px;
+}
+
+#serviceSection {
+  scroll-margin-top: 18px;
 }
 
 label {
@@ -473,6 +477,7 @@ th {
   }
 
   .header-row { gap: 8px; }
+  .service-form { grid-template-columns: 1fr; }
   .chart { overflow-x: auto; }
   .bar-wrap { min-width: 34px; }
 }

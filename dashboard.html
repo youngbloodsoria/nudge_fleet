@@ -16,6 +16,7 @@
           <div class="subtle">Owner dashboard for usage, mileage, incidents, and maintenance.</div>
         </div>
       </div>
+      <a class="button-link" href="#serviceSection">Log Service</a>
       <a class="button-link" href="index.html">Vehicle Log</a>
       <button class="secondary" id="refreshBtn" type="button" hidden>Refresh</button>
       <button id="signOutBtn" type="button" hidden>Sign Out</button>
@@ -74,6 +75,44 @@
       </section>
 
       <div class="status" id="dashboardStatus">Loading dashboard...</div>
+
+      <section class="split" id="serviceSection">
+        <div class="panel">
+          <h2>Log Service</h2>
+          <div class="service-form">
+            <div>
+              <label for="serviceName">Service type</label>
+              <select id="serviceName"></select>
+            </div>
+            <div>
+              <label for="serviceMileage">Mileage</label>
+              <input id="serviceMileage" type="number" min="0" inputmode="numeric" placeholder="103293" />
+            </div>
+            <div>
+              <label for="serviceDate">Date</label>
+              <input id="serviceDate" type="date" />
+            </div>
+            <div>
+              <label for="servicePerformedBy">Performed by</label>
+              <input id="servicePerformedBy" type="text" placeholder="Toyota / shop / staff" />
+            </div>
+            <div>
+              <label for="serviceCost">Cost</label>
+              <input id="serviceCost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="optional" />
+            </div>
+            <div>
+              <label for="serviceNotes">Notes</label>
+              <input id="serviceNotes" type="text" placeholder="Invoice notes, fluids, filters, etc." />
+            </div>
+          </div>
+          <button id="saveServiceBtn" type="button">Save Service</button>
+          <div class="status" id="serviceStatus"></div>
+        </div>
+        <div class="panel">
+          <h2>Recent Services</h2>
+          <div class="forecast-list" id="serviceHistoryRows"></div>
+        </div>
+      </section>
 
       <section class="split">
         <div class="panel">
@@ -144,44 +183,6 @@
         <table>
           <tbody id="latestStatus"></tbody>
         </table>
-      </section>
-
-      <section class="split">
-        <div class="panel">
-          <h2>Log Service</h2>
-          <div class="service-form">
-            <div>
-              <label for="serviceName">Service type</label>
-              <select id="serviceName"></select>
-            </div>
-            <div>
-              <label for="serviceMileage">Mileage</label>
-              <input id="serviceMileage" type="number" min="0" inputmode="numeric" placeholder="103293" />
-            </div>
-            <div>
-              <label for="serviceDate">Date</label>
-              <input id="serviceDate" type="date" />
-            </div>
-            <div>
-              <label for="servicePerformedBy">Performed by</label>
-              <input id="servicePerformedBy" type="text" placeholder="Toyota / shop / staff" />
-            </div>
-            <div>
-              <label for="serviceCost">Cost</label>
-              <input id="serviceCost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="optional" />
-            </div>
-            <div>
-              <label for="serviceNotes">Notes</label>
-              <input id="serviceNotes" type="text" placeholder="Invoice notes, fluids, filters, etc." />
-            </div>
-          </div>
-          <button id="saveServiceBtn" type="button">Save Service</button>
-          <div class="status" id="serviceStatus"></div>
-        </div>
-        <div class="panel">
-          <h2>Recent Services</h2>
-          <div class="forecast-list" id="serviceHistoryRows"></div>
-        </div>
       </section>
 
       <section class="split">
