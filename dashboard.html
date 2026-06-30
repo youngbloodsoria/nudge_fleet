@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Nudge Fleet Dashboard</title>
+  <style>
+    :root {
+      --bg: #f4f2ed;
+      --panel: #fff;
+      --ink: #1c1b18;
+      --muted: #6b675f;
+      --line: #dfdbd1;
+      --accent: #126c5a;
+      --accent-2: #315f9c;
+      --warn: #a65f00;
+      --bad: #a82020;
+      --good: #167243;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    header {
+      background: #171714;
+      color: #fff;
+      padding: 18px;
+      border-bottom: 4px solid var(--accent);
+    }
+
+    .header-inner,
+    main {
+      width: min(1180px, calc(100% - 28px));
+      margin: 0 auto;
+    }
+
+    .header-row,
+    .toolbar,
+    .cards,
+    .split,
+    .table-head {
+      display: grid;
+      gap: 12px;
+    }
+
+    .header-row {
+      grid-template-columns: 1fr auto;
+      align-items: center;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+
+    .subtle {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    header .subtle { color: #cfcac0; }
+
+    main {
+      padding: 18px 0 28px;
+    }
+
+    .toolbar {
+      grid-template-columns: 1.2fr 1fr auto;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: #3a3833;
+    }
+
+    input,
+    select,
+    button {
+      width: 100%;
+      min-height: 42px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 15px;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    button {
+      border: 0;
+      background: var(--ink);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: #e8e3d8;
+      color: var(--ink);
+      border: 1px solid #d6d0c4;
+    }
+
+    .setup,
+    .panel,
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+
+    .setup {
+      padding: 14px;
+      margin-bottom: 14px;
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 12px;
+      align-items: end;
+    }
+
+    .cards {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-bottom: 14px;
+    }
+
+    .metric {
+      padding: 14px;
+      min-height: 104px;
+    }
+
+    .metric .value {
+      font-size: 28px;
+      font-weight: 800;
+      margin-top: 8px;
+    }
+
+    .split {
+      grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr);
+      margin-bottom: 14px;
+    }
+
+    .panel {
+      padding: 14px;
+      min-width: 0;
+    }
+
+    .panel h2 {
+      font-size: 16px;
+      margin: 0 0 10px;
+    }
+
+    .chart {
+      height: 240px;
+      display: flex;
+      align-items: end;
+      gap: 8px;
+      padding-top: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .bar-wrap {
+      flex: 1;
+      min-width: 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: end;
+      height: 100%;
+      gap: 7px;
+    }
+
+    .bar {
+      width: 100%;
+      min-height: 3px;
+      background: var(--accent-2);
+      border-radius: 5px 5px 0 0;
+    }
+
+    .bar-label {
+      min-height: 28px;
+      color: var(--muted);
+      font-size: 11px;
+      text-align: center;
+      overflow-wrap: anywhere;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    th {
+      color: #4b4740;
+      font-size: 12px;
+      background: #faf8f3;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #e9e5dc;
+      color: #2d2b27;
+    }
+
+    .pill.ok { background: #dcefe5; color: var(--good); }
+    .pill.soon { background: #fff1d8; color: var(--warn); }
+    .pill.due,
+    .pill.no_history { background: #f6dddd; color: var(--bad); }
+
+    .status {
+      min-height: 20px;
+      margin: 4px 0 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status.bad { color: var(--bad); }
+    .hide { display: none; }
+
+    @media (max-width: 850px) {
+      .header-row,
+      .toolbar,
+      .setup,
+      .cards,
+      .split {
+        grid-template-columns: 1fr;
+      }
+
+      .header-row { gap: 8px; }
+      .chart { overflow-x: auto; }
+      .bar-wrap { min-width: 34px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner header-row">
+      <div>
+        <h1>Nudge Fleet Dashboard</h1>
+        <div class="subtle">Usage, mileage, incidents, and maintenance for the Highlander.</div>
+      </div>
+      <button class="secondary" id="refreshBtn" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="setup" id="setupPanel">
+      <div>
+        <label for="anonKey">Supabase anon key</label>
+        <input id="anonKey" type="password" autocomplete="off" placeholder="Paste anon public key" />
+      </div>
+      <div>
+        <label for="supabaseUrl">Supabase URL</label>
+        <input id="supabaseUrl" type="url" value="https://zdspapaigdywpbfwwzfb.supabase.co" />
+      </div>
+      <button id="saveConfigBtn" type="button">Save</button>
+    </section>
+
+    <section class="toolbar">
+      <div>
+        <label for="vehicleSelect">Vehicle</label>
+        <select id="vehicleSelect"></select>
+      </div>
+      <div>
+        <label for="rangeSelect">Reporting range</label>
+        <select id="rangeSelect">
+          <option value="30">Last 30 days</option>
+          <option value="90" selected>Last 90 days</option>
+          <option value="365">Last 12 months</option>
+          <option value="all">All time</option>
+        </select>
+      </div>
+      <button class="secondary" id="clearConfigBtn" type="button">Forget key</button>
+    </section>
+
+    <div class="status" id="status">Add the anon key once, then refresh the dashboard.</div>
+
+    <section class="cards">
+      <div class="metric">
+        <div class="subtle">Current mileage</div>
+        <div class="value" id="currentMileage">-</div>
+      </div>
+      <div class="metric">
+        <div class="subtle">Logs in range</div>
+        <div class="value" id="logCount">-</div>
+      </div>
+      <div class="metric">
+        <div class="subtle">Estimated miles</div>
+        <div class="value" id="rangeMiles">-</div>
+      </div>
+      <div class="metric">
+        <div class="subtle">Open attention items</div>
+        <div class="value" id="attentionCount">-</div>
+      </div>
+    </section>
+
+    <section class="split">
+      <div class="panel">
+        <h2>Mileage Over Time</h2>
+        <div class="chart" id="mileageChart"></div>
+      </div>
+      <div class="panel">
+        <h2>Latest Status</h2>
+        <table>
+          <tbody id="latestStatus"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="split">
+      <div class="panel">
+        <h2>Driver Activity</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Driver</th>
+              <th>Logs</th>
+              <th>Check-outs</th>
+              <th>Returns</th>
+              <th>Last use</th>
+            </tr>
+          </thead>
+          <tbody id="driverRows"></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h2>Maintenance</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Service</th>
+              <th>Status</th>
+              <th>Due</th>
+            </tr>
+          </thead>
+          <tbody id="maintenanceRows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Recent Logs</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Action</th>
+            <th>Driver</th>
+            <th>Mileage</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody id="recentRows"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const DEFAULT_URL = "https://zdspapaigdywpbfwwzfb.supabase.co";
+    const SCHEMA = "nudge_fleet";
+
+    const state = {
+      vehicles: [],
+      logs: [],
+      daily: [],
+      drivers: [],
+      maintenance: [],
+      incidents: [],
+      latest: [],
+    };
+
+    const els = {
+      anonKey: document.getElementById("anonKey"),
+      supabaseUrl: document.getElementById("supabaseUrl"),
+      setupPanel: document.getElementById("setupPanel"),
+      vehicleSelect: document.getElementById("vehicleSelect"),
+      rangeSelect: document.getElementById("rangeSelect"),
+      status: document.getElementById("status"),
+      currentMileage: document.getElementById("currentMileage"),
+      logCount: document.getElementById("logCount"),
+      rangeMiles: document.getElementById("rangeMiles"),
+      attentionCount: document.getElementById("attentionCount"),
+      mileageChart: document.getElementById("mileageChart"),
+      latestStatus: document.getElementById("latestStatus"),
+      driverRows: document.getElementById("driverRows"),
+      maintenanceRows: document.getElementById("maintenanceRows"),
+      recentRows: document.getElementById("recentRows"),
+    };
+
+    function config() {
+      return {
+        url: localStorage.getItem("nudgeFleet.supabaseUrl") || DEFAULT_URL,
+        key: localStorage.getItem("nudgeFleet.anonKey") || "",
+      };
+    }
+
+    function setStatus(message, isBad = false) {
+      els.status.textContent = message;
+      els.status.className = "status" + (isBad ? " bad" : "");
+    }
+
+    function fmtNumber(value) {
+      if (value === null || value === undefined || value === "") return "-";
+      return Number(value).toLocaleString();
+    }
+
+    function fmtDate(value) {
+      if (!value) return "-";
+      return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    }
+
+    function rangeStart() {
+      const range = els.rangeSelect.value;
+      if (range === "all") return null;
+      const date = new Date();
+      date.setDate(date.getDate() - Number(range));
+      return date;
+    }
+
+    async function rest(path) {
+      const { url, key } = config();
+      if (!key) throw new Error("Paste and save the Supabase anon key first.");
+
+      const resp = await fetch(`${url.replace(/\/$/, "")}/rest/v1/${path}`, {
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          "Accept-Profile": SCHEMA,
+        },
+      });
+
+      const text = await resp.text();
+      const data = text ? JSON.parse(text) : null;
+      if (!resp.ok) throw new Error(data?.message || data?.hint || `Supabase request failed (${resp.status})`);
+      return data || [];
+    }
+
+    async function loadData() {
+      setStatus("Loading dashboard data...");
+
+      const start = rangeStart();
+      const logFilter = start ? `&created_at=gte.${start.toISOString()}` : "";
+      const dailyFilter = start ? `&usage_date=gte.${start.toISOString().slice(0, 10)}` : "";
+
+      const [vehicles, latest, logs, daily, drivers, maintenance, incidents] = await Promise.all([
+        rest("vehicle_dashboard_vehicles?select=id,name,plate&order=name.asc"),
+        rest("vehicle_latest_status?select=*"),
+        rest(`vehicle_dashboard_recent_logs?select=id,vehicle_id,log_type,employee_name,mileage,notes,created_at&order=created_at.desc${logFilter}`),
+        rest(`vehicle_usage_daily?select=*&order=usage_date.asc${dailyFilter}`),
+        rest("vehicle_driver_summary?select=*&order=last_log_at.desc"),
+        rest("vehicle_maintenance_status?select=*&order=status.desc,service_name.asc"),
+        rest("vehicle_incident_summary?select=*"),
+      ]);
+
+      Object.assign(state, { vehicles, latest, logs, daily, drivers, maintenance, incidents });
+      renderVehicleOptions();
+      render();
+      setStatus(`Loaded ${logs.length.toLocaleString()} logs.`);
+    }
+
+    function selectedVehicleId() {
+      return els.vehicleSelect.value || state.vehicles[0]?.id || "";
+    }
+
+    function renderVehicleOptions() {
+      const current = selectedVehicleId();
+      els.vehicleSelect.innerHTML = state.vehicles.map((vehicle) => {
+        const label = [vehicle.name, vehicle.plate].filter(Boolean).join(" - ");
+        return `<option value="${vehicle.id}">${label || vehicle.id}</option>`;
+      }).join("");
+      if (current) els.vehicleSelect.value = current;
+    }
+
+    function rowsOrEmpty(rows, cols) {
+      if (rows) return rows;
+      return `<tr><td colspan="${cols}" class="subtle">No data yet.</td></tr>`;
+    }
+
+    function render() {
+      const vehicleId = selectedVehicleId();
+      const logs = state.logs.filter((row) => row.vehicle_id === vehicleId);
+      const latest = state.latest.find((row) => row.vehicle_id === vehicleId) || {};
+      const daily = state.daily.filter((row) => row.vehicle_id === vehicleId);
+      const drivers = state.drivers.filter((row) => row.vehicle_id === vehicleId);
+      const maintenance = state.maintenance.filter((row) => row.vehicle_id === vehicleId);
+      const incidents = state.incidents.filter((row) => row.vehicle_id === vehicleId);
+
+      const minMileage = logs.reduce((min, row) => Math.min(min, Number(row.mileage || min)), Number.POSITIVE_INFINITY);
+      const maxMileage = logs.reduce((max, row) => Math.max(max, Number(row.mileage || 0)), 0);
+      const estimatedMiles = minMileage === Number.POSITIVE_INFINITY ? 0 : Math.max(maxMileage - minMileage, 0);
+      const attention = maintenance.filter((row) => ["due", "soon", "no_history"].includes(row.status)).length + incidents.length;
+
+      els.currentMileage.textContent = fmtNumber(latest.last_mileage);
+      els.logCount.textContent = fmtNumber(logs.length);
+      els.rangeMiles.textContent = fmtNumber(estimatedMiles);
+      els.attentionCount.textContent = fmtNumber(attention);
+
+      renderLatest(latest);
+      renderChart(daily);
+      renderDrivers(drivers);
+      renderMaintenance(maintenance);
+      renderRecent(logs);
+    }
+
+    function renderLatest(latest) {
+      els.latestStatus.innerHTML = [
+        ["Vehicle", [latest.name, latest.plate].filter(Boolean).join(" - ")],
+        ["Last action", latest.last_log_type],
+        ["Last driver", latest.last_employee_name],
+        ["Last mileage", fmtNumber(latest.last_mileage)],
+        ["Last seen", fmtDate(latest.last_seen_at)],
+        ["Notes", latest.last_notes || "-"],
+      ].map(([label, value]) => `<tr><th>${label}</th><td>${value || "-"}</td></tr>`).join("");
+    }
+
+    function renderChart(daily) {
+      if (!daily.length) {
+        els.mileageChart.innerHTML = '<div class="subtle">No mileage data in this range.</div>';
+        return;
+      }
+
+      const maxMiles = Math.max(...daily.map((row) => Number(row.estimated_miles || 0)), 1);
+      els.mileageChart.innerHTML = daily.slice(-31).map((row) => {
+        const miles = Number(row.estimated_miles || 0);
+        const height = Math.max((miles / maxMiles) * 190, 3);
+        const date = new Date(`${row.usage_date}T00:00:00`);
+        const label = date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+        return `
+          <div class="bar-wrap" title="${label}: ${fmtNumber(miles)} miles">
+            <div class="bar" style="height:${height}px"></div>
+            <div class="bar-label">${label}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderDrivers(drivers) {
+      els.driverRows.innerHTML = rowsOrEmpty(drivers.slice(0, 10).map((row) => `
+        <tr>
+          <td>${row.employee_name || "-"}</td>
+          <td>${fmtNumber(row.log_count)}</td>
+          <td>${fmtNumber(row.checkout_count)}</td>
+          <td>${fmtNumber(row.return_count)}</td>
+          <td>${fmtDate(row.last_log_at)}</td>
+        </tr>
+      `).join(""), 5);
+    }
+
+    function renderMaintenance(maintenance) {
+      els.maintenanceRows.innerHTML = rowsOrEmpty(maintenance.map((row) => {
+        const due = [
+          row.due_mileage ? `${fmtNumber(row.due_mileage)} mi` : "",
+          row.due_date ? fmtDate(row.due_date) : "",
+        ].filter(Boolean).join(" / ") || "Add service history";
+        return `
+          <tr>
+            <td>${row.service_name}</td>
+            <td><span class="pill ${row.status}">${String(row.status || "ok").replace("_", " ")}</span></td>
+            <td>${due}</td>
+          </tr>
+        `;
+      }).join(""), 3);
+    }
+
+    function renderRecent(logs) {
+      els.recentRows.innerHTML = rowsOrEmpty(logs.slice(0, 25).map((row) => `
+        <tr>
+          <td>${fmtDate(row.created_at)}</td>
+          <td>${row.log_type || "-"}</td>
+          <td>${row.employee_name || "-"}</td>
+          <td>${fmtNumber(row.mileage)}</td>
+          <td>${row.notes || ""}</td>
+        </tr>
+      `).join(""), 5);
+    }
+
+    document.getElementById("saveConfigBtn").addEventListener("click", () => {
+      localStorage.setItem("nudgeFleet.anonKey", els.anonKey.value.trim());
+      localStorage.setItem("nudgeFleet.supabaseUrl", els.supabaseUrl.value.trim() || DEFAULT_URL);
+      els.anonKey.value = "";
+      loadData().catch((error) => setStatus(error.message, true));
+    });
+
+    document.getElementById("clearConfigBtn").addEventListener("click", () => {
+      localStorage.removeItem("nudgeFleet.anonKey");
+      localStorage.removeItem("nudgeFleet.supabaseUrl");
+      setStatus("Saved key cleared from this browser.");
+    });
+
+    document.getElementById("refreshBtn").addEventListener("click", () => {
+      loadData().catch((error) => setStatus(error.message, true));
+    });
+
+    els.vehicleSelect.addEventListener("change", render);
+    els.rangeSelect.addEventListener("change", () => loadData().catch((error) => setStatus(error.message, true)));
+
+    els.supabaseUrl.value = config().url;
+    if (config().key) {
+      loadData().catch((error) => setStatus(error.message, true));
+    }
+  </script>
+</body>
+</html>

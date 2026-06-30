@@ -8,10 +8,17 @@ on:
 jobs:
   purge:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Call Supabase purge function
+        env:
+          SUPABASE_PURGE_URL: ${{ secrets.SUPABASE_PURGE_URL }}
+          SUPABASE_PURGE_KEY: ${{ secrets.SUPABASE_PURGE_KEY }}
         run: |
-          curl -sS -X POST "${{ secrets.SUPABASE_PURGE_URL }}" \
-            -H "x-purge-key: ${{ secrets.SUPABASE_PURGE_KEY }}" \
+          test -n "$SUPABASE_PURGE_URL"
+          test -n "$SUPABASE_PURGE_KEY"
+
+          curl --fail --show-error --silent --max-time 60 -X POST "$SUPABASE_PURGE_URL" \
+            -H "x-purge-key: $SUPABASE_PURGE_KEY" \
             -H "content-type: application/json" \
             -d "{}"
