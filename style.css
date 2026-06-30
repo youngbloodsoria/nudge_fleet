@@ -266,37 +266,80 @@ button.compact {
 }
 
 .chart {
-  height: 240px;
+  min-height: 280px;
+  overflow-x: auto;
+}
+
+.chart-summary {
   display: flex;
-  align-items: end;
+  flex-wrap: wrap;
   gap: 8px;
-  padding-top: 12px;
-  border-bottom: 1px solid var(--line);
+  margin: 0 0 10px;
 }
 
-.bar-wrap {
-  flex: 1;
-  min-width: 18px;
-  display: flex;
-  flex-direction: column;
-  justify-content: end;
-  height: 100%;
-  gap: 7px;
+.chart-summary span {
+  min-height: 26px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: #35312b;
+  background: #fbfaf6;
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.bar {
+.mileage-svg {
+  display: block;
   width: 100%;
-  min-height: 3px;
-  background: var(--accent-2);
-  border-radius: 5px 5px 0 0;
+  min-width: 680px;
+  height: auto;
 }
 
-.bar-label {
-  min-height: 28px;
-  color: var(--muted);
+.chart-grid {
+  stroke: #e7e1d7;
+  stroke-width: 1;
+}
+
+.chart-axis-label,
+.chart-axis-title {
+  fill: var(--muted);
   font-size: 11px;
-  text-align: center;
-  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
+.mileage-line {
+  fill: none;
+  stroke: var(--accent-2);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mileage-point {
+  fill: #fff;
+  stroke: var(--accent-2);
+  stroke-width: 3;
+}
+
+.maintenance-line {
+  stroke: var(--warn);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+}
+
+.maintenance-line.due,
+.maintenance-line.no_history {
+  stroke: var(--bad);
+}
+
+.maintenance-line.ok {
+  stroke: var(--good);
+}
+
+.maintenance-label {
+  fill: #4a453d;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 table {

@@ -26,6 +26,7 @@ const els = {
   checkoutCount: document.getElementById("checkoutCount"),
   latestStatus: document.getElementById("latestStatus"),
   mileageChart: document.getElementById("mileageChart"),
+  chartSummary: document.getElementById("chartSummary"),
   driverRows: document.getElementById("driverRows"),
   maintenanceRows: document.getElementById("maintenanceRows"),
   alertRows: document.getElementById("alertRows"),
@@ -60,6 +61,11 @@ function fmtDateTime(value) {
   return new Date(value).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+function fmtShortDate(value) {
+  if (!value) return "-";
+  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 function rangeDays() {
   const value = els.rangeSelect.value;
   return value === "all" ? null : Number(value);
@@ -88,6 +94,58 @@ function mileageDeltas(logs) {
       return delta > 0 ? { ...row, delta } : null;
     })
     .filter(Boolean);
+}
+
+function sortedMileageLogs(logs) {
+  return [...logs]
+    .map((row) => ({
+      ...row,
+      mileage: Number(row.mileage || 0),
+      at: new Date(row.created_at),
+    }))
+    .filter((row) => row.mileage > 0 && !Number.isNaN(row.at.getTime()))
+    .sort((a, b) => a.at - b.at);
+}
+
+function usageRate(logs) {
+  const sorted = sortedMileageLogs(logs);
+  if (sorted.length < 2) return null;
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const days = Math.max((last.at - first.at) / 86400000, 1);
+  const miles = Math.max(last.mileage - first.mileage, 0);
+  if (!miles) return null;
+  return {
+    milesPerDay: miles / days,
+    miles,
+    days,
+    latestMileage: last.mileage,
+    latestDate: last.at,
+  };
+}
+
+function predictionForMaintenance(item, rate) {
+  if (!rate) return { label: "Need more mileage history", date: null, days: null };
+
+  const predictions = [];
+  if (item.due_mileage && rate.latestMileage) {
+    const milesRemaining = Number(item.due_mileage) - rate.latestMileage;
+    const days = Math.max(milesRemaining / rate.milesPerDay, 0);
+    const date = new Date(rate.latestDate.getTime() + days * 86400000);
+    predictions.push({ date, days, label: `${fmtDate(date)} by mileage` });
+  }
+  if (item.due_date) {
+    const date = new Date(`${item.due_date}T00:00:00`);
+    const days = Math.max((date - new Date()) / 86400000, 0);
+    predictions.push({ date, days, label: `${fmtDate(date)} by date` });
+  }
+  if (!predictions.length) return { label: "Add service history", date: null, days: null };
+
+  predictions.sort((a, b) => a.date - b.date);
+  const next = predictions[0];
+  const roundedDays = Math.round(next.days);
+  const when = roundedDays <= 0 ? "now" : `in ${roundedDays} days`;
+  return { ...next, label: `${next.label} (${when})` };
 }
 
 async function initialize() {
@@ -178,6 +236,7 @@ function renderDashboard() {
   const maintenance = (state.summary.maintenance || []).filter((row) => row.vehicle_id === vehicleId);
   const incidents = (state.summary.incidents || []).filter((row) => row.vehicle_id === vehicleId);
 
+  const rate = usageRate(logs);
   const deltas = mileageDeltas(logs);
   const estimatedMiles = deltas.reduce((total, row) => total + row.delta, 0);
   const averageUseMiles = deltas.length ? estimatedMiles / deltas.length : 0;
@@ -196,10 +255,10 @@ function renderDashboard() {
   els.checkoutCount.textContent = fmtNumber(checkoutCount);
 
   renderLatest(latest);
-  renderChart(daily);
+  renderChart(logs, maintenance, rate);
   renderAlerts(vehicleId, maintenance);
   renderDrivers(drivers);
-  renderMaintenance(maintenance);
+  renderMaintenance(maintenance, rate);
   renderIncidents(incidents);
   renderRecent(logs);
 }
@@ -263,25 +322,80 @@ function renderLatest(latest) {
   ].map(([label, value]) => `<tr><th>${label}</th><td>${value || "-"}</td></tr>`).join("");
 }
 
-function renderChart(daily) {
-  if (!daily.length) {
+function renderChart(logs, maintenance, rate) {
+  const mileageLogs = sortedMileageLogs(logs);
+  if (mileageLogs.length < 2) {
+    els.chartSummary.innerHTML = "";
     els.mileageChart.innerHTML = '<div class="empty">No mileage data in this range.</div>';
     return;
   }
 
-  const maxMiles = Math.max(...daily.map((row) => Number(row.estimated_miles || 0)), 1);
-  els.mileageChart.innerHTML = daily.slice(-31).map((row) => {
-    const miles = Number(row.estimated_miles || 0);
-    const height = Math.max((miles / maxMiles) * 190, 3);
-    const date = new Date(`${row.usage_date}T00:00:00`);
-    const label = date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    return `
-      <div class="bar-wrap" title="${label}: ${fmtNumber(miles)} miles">
-        <div class="bar" style="height:${height}px"></div>
-        <div class="bar-label">${label}</div>
-      </div>
-    `;
-  }).join("");
+  const dueItems = maintenance
+    .filter((item) => item.due_mileage)
+    .map((item) => ({ ...item, due_mileage: Number(item.due_mileage) }));
+  const values = [
+    ...mileageLogs.map((row) => row.mileage),
+    ...dueItems.map((item) => item.due_mileage),
+  ];
+  const minMileage = Math.min(...values);
+  const maxMileage = Math.max(...values);
+  const padding = Math.max(Math.round((maxMileage - minMileage) * 0.08), 250);
+  const yMin = Math.max(0, minMileage - padding);
+  const yMax = maxMileage + padding;
+  const minTime = mileageLogs[0].at.getTime();
+  const maxTime = mileageLogs[mileageLogs.length - 1].at.getTime();
+  const width = 760;
+  const height = 280;
+  const margin = { top: 18, right: 24, bottom: 38, left: 72 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const span = Math.max(maxTime - minTime, 1);
+  const x = (time) => margin.left + ((time - minTime) / span) * plotWidth;
+  const y = (mileage) => margin.top + (1 - ((mileage - yMin) / (yMax - yMin || 1))) * plotHeight;
+  const points = mileageLogs.map((row) => `${x(row.at.getTime()).toFixed(1)},${y(row.mileage).toFixed(1)}`).join(" ");
+  const ticks = Array.from({ length: 5 }, (_, index) => yMin + ((yMax - yMin) / 4) * index);
+  const dateTicks = [mileageLogs[0], mileageLogs[Math.floor(mileageLogs.length / 2)], mileageLogs[mileageLogs.length - 1]];
+  const nearestDueItems = dueItems
+    .filter((item) => item.due_mileage >= yMin && item.due_mileage <= yMax)
+    .slice(0, 6);
+  const nextPrediction = maintenance
+    .filter((item) => ["due", "soon", "no_history"].includes(item.status) || item.due_mileage || item.due_date)
+    .map((item) => ({ item, prediction: predictionForMaintenance(item, rate) }))
+    .filter((entry) => entry.prediction.date)
+    .sort((a, b) => a.prediction.date - b.prediction.date)[0];
+
+  els.chartSummary.innerHTML = `
+    <span>${rate ? `${fmtNumber(Math.round(rate.milesPerDay))} miles/day recently` : "Need more mileage history"}</span>
+    <span>${rate ? `${fmtNumber(Math.round(rate.milesPerDay * 365))} projected miles/year` : ""}</span>
+    <span>${nextPrediction ? `Next likely service: ${nextPrediction.item.service_name} ${nextPrediction.prediction.label}` : ""}</span>
+  `;
+
+  els.mileageChart.innerHTML = `
+    <svg class="mileage-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Odometer mileage over time">
+      ${ticks.map((tick) => `
+        <g>
+          <line class="chart-grid" x1="${margin.left}" y1="${y(tick).toFixed(1)}" x2="${width - margin.right}" y2="${y(tick).toFixed(1)}"></line>
+          <text class="chart-axis-label" x="${margin.left - 10}" y="${(y(tick) + 4).toFixed(1)}" text-anchor="end">${fmtNumber(Math.round(tick))}</text>
+        </g>
+      `).join("")}
+      ${dateTicks.map((row) => `
+        <text class="chart-axis-label" x="${x(row.at.getTime()).toFixed(1)}" y="${height - 10}" text-anchor="middle">${fmtShortDate(row.at)}</text>
+      `).join("")}
+      ${nearestDueItems.map((item) => `
+        <g>
+          <line class="maintenance-line ${item.status}" x1="${margin.left}" y1="${y(item.due_mileage).toFixed(1)}" x2="${width - margin.right}" y2="${y(item.due_mileage).toFixed(1)}"></line>
+          <text class="maintenance-label" x="${width - margin.right - 4}" y="${(y(item.due_mileage) - 5).toFixed(1)}" text-anchor="end">${item.service_name} · ${fmtNumber(item.due_mileage)}</text>
+        </g>
+      `).join("")}
+      <polyline class="mileage-line" points="${points}"></polyline>
+      ${mileageLogs.map((row) => `
+        <circle class="mileage-point" cx="${x(row.at.getTime()).toFixed(1)}" cy="${y(row.mileage).toFixed(1)}" r="4">
+          <title>${fmtDateTime(row.created_at)} · ${fmtNumber(row.mileage)} mi · ${row.employee_name || ""}</title>
+        </circle>
+      `).join("")}
+      <text class="chart-axis-title" x="14" y="${margin.top}" transform="rotate(-90 14 ${margin.top})">Mileage</text>
+    </svg>
+  `;
 }
 
 function renderDrivers(drivers) {
@@ -296,20 +410,22 @@ function renderDrivers(drivers) {
   `).join(""), 5);
 }
 
-function renderMaintenance(maintenance) {
+function renderMaintenance(maintenance, rate) {
   els.maintenanceRows.innerHTML = rowsOrEmpty(maintenance.map((row) => {
     const due = [
       row.due_mileage ? `${fmtNumber(row.due_mileage)} mi` : "",
       row.due_date ? fmtDate(row.due_date) : "",
     ].filter(Boolean).join(" / ") || "Add service history";
+    const prediction = predictionForMaintenance(row, rate);
     return `
       <tr>
         <td>${row.service_name}</td>
         <td><span class="pill ${row.status}">${String(row.status || "ok").replace("_", " ")}</span></td>
         <td>${due}</td>
+        <td>${prediction.label}</td>
       </tr>
     `;
-  }).join(""), 3);
+  }).join(""), 4);
 }
 
 function renderIncidents(incidents) {
