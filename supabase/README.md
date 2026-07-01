@@ -57,10 +57,16 @@ Recommended Vercel-only server env vars once an email provider is selected:
 ```text
 ALERT_TO_EMAIL=owner@example.com
 ALERT_FROM_EMAIL=Nudge Fleet <alerts@yourdomain.com>
-SUPABASE_SERVICE_ROLE_KEY=server-only Supabase service role key
+SENDGRID_API_KEY=your SendGrid API key
+WEEKLY_REPORT_TO_EMAIL=alex.soria@skyrun.com
+WEEKLY_REPORT_FROM_EMAIL=Nudge Fleet <verified-sender@yourdomain.com>
+CRON_SECRET=a long random string for Vercel Cron
+APP_BASE_URL=https://your-vercel-domain.vercel.app
 ```
 
-The service-role key must only live in Vercel serverless environment variables, never in browser JavaScript.
+The weekly email intentionally sends a secure dashboard link rather than private driver, mileage, incident, or maintenance details. The report details stay behind owner login. Signed-in owners can send it from the dashboard with **Send Report**, and Vercel Cron can call `/api/weekly-report` weekly when `CRON_SECRET` is configured.
+
+No Supabase service-role key is required for this weekly link email. If you add future server jobs that do need a service-role key, keep it in Vercel server-only environment variables and never in browser JavaScript.
 
 ## 100k-mile maintenance baseline
 
