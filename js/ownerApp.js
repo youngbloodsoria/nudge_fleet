@@ -93,6 +93,7 @@ const state = {
   config: null,
   summary: null,
   serviceModule: null,
+  loadingServiceHistory: false,
   expanded: {
     maintenance: false,
     logs: false,
@@ -184,6 +185,30 @@ function maintenanceStatusLabel(status) {
     ok: "ok",
   };
   return labels[status] || "ok";
+}
+
+function normalizeScheduleStatus(status) {
+  const normalized = String(status || "ok");
+  if (normalized === "overdue") return "due";
+  if (normalized === "due_soon") return "soon";
+  if (normalized === "needs_setup") return "no_history";
+  return normalized;
+}
+
+function normalizeMaintenanceItem(item) {
+  return {
+    ...item,
+    service_name: item.service_name || item.task_name || "Service",
+    due_mileage: item.due_mileage ?? item.next_due_mileage ?? null,
+    due_date: item.due_date ?? item.next_due_date ?? null,
+    status: normalizeScheduleStatus(item.status),
+  };
+}
+
+function activeMaintenanceItems(fallbackMaintenance) {
+  const serviceSchedule = state.serviceModule?.schedule || [];
+  const source = serviceSchedule.length ? serviceSchedule : fallbackMaintenance;
+  return source.map(normalizeMaintenanceItem);
 }
 
 function sortMaintenanceByUrgency(items) {
@@ -394,21 +419,24 @@ function renderDashboard() {
   const maxDailyMiles = daily.length ? Math.max(...daily.map((row) => row.miles)) : 0;
   const serviceModuleMatches = state.serviceModule?.vehicle?.id === vehicleId;
   const serviceRecords = serviceModuleMatches ? state.serviceModule?.records || [] : [];
+  const activeMaintenance = serviceModuleMatches ? activeMaintenanceItems(maintenance) : maintenance.map(normalizeMaintenanceItem);
 
   renderCurrentStatus(latest);
-  renderAtGlance(maintenance, incidents, rate);
+  renderAtGlance(activeMaintenance, incidents, rate);
   renderMetrics({ estimatedMiles, logs, checkoutCount, returnCount, incidentCount, rate, maxDailyMiles });
-  renderMaintenanceCards(maintenance, latest, rate);
+  renderMaintenanceCards(activeMaintenance, latest, rate);
   renderDailyMileageChart(daily, rate);
-  renderMaintenanceRunway(logs, maintenance, rate);
-  renderServiceForm(vehicleId, latest, maintenance);
+  renderMaintenanceRunway(logs, activeMaintenance, rate);
+  renderServiceForm(vehicleId, latest, activeMaintenance);
   renderServiceHistory(
     serviceRecords,
     serviceModuleMatches ? "No service records returned from Supabase." : "Loading service records...",
   );
   renderIncidentSummary(incidents);
   renderRecent(logs);
-  loadServiceHistory().catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
+  if (!serviceModuleMatches && !state.loadingServiceHistory) {
+    loadServiceHistory().catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
+  }
 }
 
 function renderCurrentStatus(latest) {
@@ -724,14 +752,21 @@ async function serviceFetch(name, options = {}) {
 
 async function loadServiceHistory() {
   if (!state.config?.supabaseUrl) return;
+  if (state.loadingServiceHistory) return;
 
+  state.loadingServiceHistory = true;
   setStatus(els.serviceHistoryStatus, "Loading maintenance history...");
-  const vehicleId = selectedVehicleId();
-  const data = await serviceFetch(`vehicle_service_admin?vehicle_id=${encodeURIComponent(vehicleId)}`, { requireAdmin: false });
-  state.serviceModule = data;
-  populateHistoryCategoryFilter(data.records || []);
-  renderServiceModule();
-  setStatus(els.serviceHistoryStatus, "Maintenance history loaded.");
+  try {
+    const vehicleId = selectedVehicleId();
+    const data = await serviceFetch(`vehicle_service_admin?vehicle_id=${encodeURIComponent(vehicleId)}`, { requireAdmin: false });
+    state.serviceModule = data;
+    populateHistoryCategoryFilter(data.records || []);
+    renderServiceModule();
+    renderDashboard();
+    setStatus(els.serviceHistoryStatus, "Maintenance history loaded.");
+  } finally {
+    state.loadingServiceHistory = false;
+  }
 }
 
 function populateHistoryCategoryFilter(records) {
