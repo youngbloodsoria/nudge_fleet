@@ -26,6 +26,32 @@ function requireAdmin(request: Request) {
   return null;
 }
 
+async function currentUserIsOwner(authorization: string) {
+  const response = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/rpc/current_user_is_owner`, {
+    method: "POST",
+    headers: {
+      apikey: SERVICE_ROLE_KEY,
+      authorization,
+      "accept-profile": SCHEMA,
+      "content-profile": SCHEMA,
+      "content-type": "application/json",
+    },
+    body: "{}",
+  });
+  if (!response.ok) return false;
+  return await response.json().catch(() => false) === true;
+}
+
+async function requireReadAccess(request: Request) {
+  if (!SUPABASE_URL || !SERVICE_ROLE_KEY) return "Supabase service credentials are not configured.";
+  if (ADMIN_PORTAL_KEY && request.headers.get("x-admin-key") === ADMIN_PORTAL_KEY) return null;
+
+  const authorization = request.headers.get("authorization") || "";
+  if (!authorization.toLowerCase().startsWith("bearer ")) return "Sign in to view service history.";
+  if (!await currentUserIsOwner(authorization)) return "Not authorized for fleet dashboard.";
+  return null;
+}
+
 function restHeaders(extra: HeadersInit = {}) {
   return {
     apikey: SERVICE_ROLE_KEY,
@@ -193,13 +219,15 @@ async function markMaintenanceComplete(request: Request) {
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  const authError = requireAdmin(request);
-  if (authError) return json(401, { ok: false, error: authError });
-
   try {
     if (request.method === "GET") {
+      const readError = await requireReadAccess(request);
+      if (readError) return json(401, { ok: false, error: readError });
       return json(200, { ok: true, data: await readServiceModule(request) });
     }
+    const authError = requireAdmin(request);
+    if (authError) return json(401, { ok: false, error: authError });
+
     if (request.method === "POST") {
       return json(200, { ok: true, data: await createRecord(request) });
     }

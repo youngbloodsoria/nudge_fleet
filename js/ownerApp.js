@@ -393,7 +393,7 @@ function renderDashboard() {
   const incidentCount = incidents.reduce((total, row) => total + Number(row.incident_count || 0), 0);
   const maxDailyMiles = daily.length ? Math.max(...daily.map((row) => row.miles)) : 0;
   const serviceModuleMatches = state.serviceModule?.vehicle?.id === vehicleId;
-  const serviceRecords = adminKey() && serviceModuleMatches ? state.serviceModule?.records || [] : [];
+  const serviceRecords = serviceModuleMatches ? state.serviceModule?.records || [] : [];
 
   renderCurrentStatus(latest);
   renderAtGlance(maintenance, incidents, rate);
@@ -404,13 +404,11 @@ function renderDashboard() {
   renderServiceForm(vehicleId, latest, maintenance);
   renderServiceHistory(
     serviceRecords,
-    adminKey() ? "No service records returned from Supabase." : "Enter the admin key to load service records.",
+    serviceModuleMatches ? "No service records returned from Supabase." : "Loading service records...",
   );
   renderIncidentSummary(incidents);
   renderRecent(logs);
-  if (els.serviceAdminKey.value) {
-    loadServiceHistory().catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
-  }
+  loadServiceHistory().catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
 }
 
 function renderCurrentStatus(latest) {
@@ -703,14 +701,19 @@ function serviceFunctionUrl(name) {
 }
 
 async function serviceFetch(name, options = {}) {
-  if (!adminKey()) throw new Error("Enter and save the admin key first.");
+  const requireAdmin = options.requireAdmin !== false;
+  if (requireAdmin && !adminKey()) throw new Error("Enter and save the admin key first.");
+  const { requireAdmin: _requireAdmin, ...fetchOptions } = options;
+  const headers = { ...(fetchOptions.headers || {}) };
+  const { data: sessionData } = await state.supabase.auth.getSession();
+  if (sessionData?.session?.access_token) {
+    headers.authorization = `Bearer ${sessionData.session.access_token}`;
+  }
+  if (adminKey()) headers["x-admin-key"] = adminKey();
 
   const response = await fetch(serviceFunctionUrl(name), {
-    ...options,
-    headers: {
-      "x-admin-key": adminKey(),
-      ...(options.headers || {}),
-    },
+    ...fetchOptions,
+    headers,
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.ok === false) {
@@ -721,14 +724,10 @@ async function serviceFetch(name, options = {}) {
 
 async function loadServiceHistory() {
   if (!state.config?.supabaseUrl) return;
-  if (!adminKey()) {
-    setStatus(els.serviceHistoryStatus, "Enter the admin key to load maintenance history.");
-    return;
-  }
 
   setStatus(els.serviceHistoryStatus, "Loading maintenance history...");
   const vehicleId = selectedVehicleId();
-  const data = await serviceFetch(`vehicle_service_admin?vehicle_id=${encodeURIComponent(vehicleId)}`);
+  const data = await serviceFetch(`vehicle_service_admin?vehicle_id=${encodeURIComponent(vehicleId)}`, { requireAdmin: false });
   state.serviceModule = data;
   populateHistoryCategoryFilter(data.records || []);
   renderServiceModule();
