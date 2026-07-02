@@ -46,6 +46,39 @@ const els = {
   saveServiceBtn: document.getElementById("saveServiceBtn"),
   serviceStatus: document.getElementById("serviceStatus"),
   serviceHistoryRows: document.getElementById("serviceHistoryRows"),
+  serviceAdminKey: document.getElementById("serviceAdminKey"),
+  saveServiceAdminKeyBtn: document.getElementById("saveServiceAdminKeyBtn"),
+  refreshServiceHistoryBtn: document.getElementById("refreshServiceHistoryBtn"),
+  serviceHistoryStatus: document.getElementById("serviceHistoryStatus"),
+  historyCurrentMileage: document.getElementById("historyCurrentMileage"),
+  historyCustomerPaid: document.getElementById("historyCustomerPaid"),
+  historyDealerPaid: document.getElementById("historyDealerPaid"),
+  historyRecordCount: document.getElementById("historyRecordCount"),
+  historyDateFrom: document.getElementById("historyDateFrom"),
+  historyDateTo: document.getElementById("historyDateTo"),
+  historyMileageMin: document.getElementById("historyMileageMin"),
+  historyMileageMax: document.getElementById("historyMileageMax"),
+  historyCategory: document.getElementById("historyCategory"),
+  historyVendor: document.getElementById("historyVendor"),
+  historyRo: document.getElementById("historyRo"),
+  clearHistoryFiltersBtn: document.getElementById("clearHistoryFiltersBtn"),
+  serviceTimelineRows: document.getElementById("serviceTimelineRows"),
+  historyScheduleRows: document.getElementById("historyScheduleRows"),
+  serviceRecordForm: document.getElementById("serviceRecordForm"),
+  serviceRecordFormTitle: document.getElementById("serviceRecordFormTitle"),
+  serviceRecordId: document.getElementById("serviceRecordId"),
+  recordServiceDate: document.getElementById("recordServiceDate"),
+  recordMileage: document.getElementById("recordMileage"),
+  recordRoNumber: document.getElementById("recordRoNumber"),
+  recordCategory: document.getElementById("recordCategory"),
+  recordServiceTitle: document.getElementById("recordServiceTitle"),
+  recordVendor: document.getElementById("recordVendor"),
+  recordCustomerPaid: document.getElementById("recordCustomerPaid"),
+  recordNotes: document.getElementById("recordNotes"),
+  saveServiceRecordBtn: document.getElementById("saveServiceRecordBtn"),
+  resetServiceRecordBtn: document.getElementById("resetServiceRecordBtn"),
+  serviceDocumentFile: document.getElementById("serviceDocumentFile"),
+  uploadServiceDocumentBtn: document.getElementById("uploadServiceDocumentBtn"),
   incidentSummary: document.getElementById("incidentSummary"),
   recentRows: document.getElementById("recentRows"),
   toggleMaintenanceBtn: document.getElementById("toggleMaintenanceBtn"),
@@ -57,7 +90,9 @@ const els = {
 const state = {
   supabase: null,
   session: null,
+  config: null,
   summary: null,
+  serviceModule: null,
   expanded: {
     maintenance: false,
     logs: false,
@@ -83,6 +118,11 @@ function setStatus(element, message, isBad = false) {
 function formatNumber(value) {
   if (value === null || value === undefined || value === "") return "-";
   return Number(value).toLocaleString();
+}
+
+function formatCurrency(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  return Number(value).toLocaleString(undefined, { style: "currency", currency: "USD" });
 }
 
 function formatMileage(value) {
@@ -257,6 +297,7 @@ function daysRemaining(item) {
 
 async function initialize() {
   const config = await loadAppConfig();
+  state.config = config;
   if (!configIsReady(config)) {
     els.configWarning.hidden = false;
     setStatus(els.authStatus, "Vercel needs SUPABASE_ANON_KEY before owner login can work.", true);
@@ -270,6 +311,7 @@ async function initialize() {
 
   const { data } = await state.supabase.auth.getSession();
   state.session = data.session;
+  els.serviceAdminKey.value = localStorage.getItem("nudgeFleet.adminKey") || "";
   renderAuthState();
 
   state.supabase.auth.onAuthStateChange((_event, session) => {
@@ -281,6 +323,7 @@ async function initialize() {
   if (state.session) {
     await loadDashboard();
   }
+
 }
 
 function renderAuthState() {
@@ -361,6 +404,9 @@ function renderDashboard() {
   renderServiceHistory(serviceHistory);
   renderIncidentSummary(incidents);
   renderRecent(logs);
+  if (els.serviceAdminKey.value) {
+    loadServiceHistory().catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
+  }
 }
 
 function renderCurrentStatus(latest) {
@@ -642,6 +688,230 @@ function renderServiceHistory(history) {
   `).join(""), "No services logged yet.");
 }
 
+function adminKey() {
+  return els.serviceAdminKey.value.trim();
+}
+
+function serviceFunctionUrl(name) {
+  return `${state.config.supabaseUrl.replace(/\/$/, "")}/functions/v1/${name}`;
+}
+
+async function serviceFetch(name, options = {}) {
+  if (!adminKey()) throw new Error("Enter and save the admin key first.");
+
+  const response = await fetch(serviceFunctionUrl(name), {
+    ...options,
+    headers: {
+      "x-admin-key": adminKey(),
+      ...(options.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.error || `Service admin request failed (${response.status})`);
+  }
+  return payload.data;
+}
+
+async function loadServiceHistory() {
+  if (!state.config?.supabaseUrl) return;
+  if (!adminKey()) {
+    setStatus(els.serviceHistoryStatus, "Enter the admin key to load maintenance history.");
+    return;
+  }
+
+  setStatus(els.serviceHistoryStatus, "Loading maintenance history...");
+  const vehicleId = selectedVehicleId();
+  const data = await serviceFetch(`vehicle_service_admin?vehicle_id=${encodeURIComponent(vehicleId)}`);
+  state.serviceModule = data;
+  populateHistoryCategoryFilter(data.records || []);
+  renderServiceModule();
+  setStatus(els.serviceHistoryStatus, "Maintenance history loaded.");
+}
+
+function populateHistoryCategoryFilter(records) {
+  const current = els.historyCategory.value;
+  const categories = [...new Set(records.map((record) => record.category).filter(Boolean))].sort();
+  els.historyCategory.innerHTML = '<option value="">All categories</option>' + categories.map((category) => (
+    `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`
+  )).join("");
+  if (categories.includes(current)) els.historyCategory.value = current;
+}
+
+function filteredServiceRecords() {
+  const records = state.serviceModule?.records || [];
+  const dateFrom = els.historyDateFrom.value;
+  const dateTo = els.historyDateTo.value;
+  const mileageMin = els.historyMileageMin.value === "" ? null : Number(els.historyMileageMin.value);
+  const mileageMax = els.historyMileageMax.value === "" ? null : Number(els.historyMileageMax.value);
+  const category = els.historyCategory.value;
+  const vendor = els.historyVendor.value.trim().toLowerCase();
+  const ro = els.historyRo.value.trim().toLowerCase();
+
+  return records.filter((record) => {
+    if (dateFrom && record.service_date < dateFrom) return false;
+    if (dateTo && record.service_date > dateTo) return false;
+    if (mileageMin !== null && Number(record.mileage || 0) < mileageMin) return false;
+    if (mileageMax !== null && Number(record.mileage || 0) > mileageMax) return false;
+    if (category && record.category !== category) return false;
+    if (vendor && !String(record.vendor || "").toLowerCase().includes(vendor)) return false;
+    if (ro && !String(record.ro_number || "").toLowerCase().includes(ro)) return false;
+    return true;
+  });
+}
+
+function renderServiceModule() {
+  const data = state.serviceModule || {};
+  const vehicle = data.vehicle || {};
+  const totals = data.totals || {};
+  const dealerPaid = Number(totals.dealer_internal_paid || 0) + Number(totals.warranty_paid || 0) + Number(totals.goodwill_paid || 0);
+
+  els.historyCurrentMileage.textContent = formatMileage(vehicle.current_mileage || state.summary?.latest?.[0]?.last_mileage);
+  els.historyCustomerPaid.textContent = formatCurrency(totals.customer_paid || 0);
+  els.historyDealerPaid.textContent = formatCurrency(dealerPaid);
+  els.historyRecordCount.textContent = formatNumber((data.records || []).length);
+  renderServiceTimeline();
+  renderHistorySchedule(data.schedule || []);
+}
+
+function renderServiceTimeline() {
+  const rows = filteredServiceRecords();
+  els.serviceTimelineRows.innerHTML = cardsOrEmpty(rows.map((record) => `
+    <article class="timeline-row">
+      <div class="timeline-date">
+        <strong>${formatDate(record.service_date)}</strong>
+        <span>${formatMileage(record.mileage)}</span>
+      </div>
+      <div>
+        <div class="timeline-title">
+          <strong>${escapeHtml(record.service_title)}</strong>
+          <span class="pill ${serviceCategoryClass(record.category)}">${escapeHtml(record.category)}</span>
+        </div>
+        <p>${escapeHtml(record.service_description || "")}</p>
+        <div class="timeline-meta">
+          <span>RO ${escapeHtml(record.ro_number || "-")}</span>
+          <span>${escapeHtml(record.vendor || "-")}</span>
+          <span>Customer ${formatCurrency(record.customer_paid || 0)}</span>
+          ${record.dealer_internal_paid ? `<span>Dealer/internal ${formatCurrency(record.dealer_internal_paid)}</span>` : ""}
+        </div>
+        ${record.notes ? `<div class="alert-note">${escapeHtml(record.notes)}</div>` : ""}
+      </div>
+      <button class="secondary compact" data-edit-service-record="${record.id}" type="button">Edit</button>
+    </article>
+  `).join(""), "No service records match these filters.");
+}
+
+function serviceCategoryClass(category) {
+  return String(category || "").toLowerCase().replace(/[^a-z0-9]+/g, "-") || "info";
+}
+
+function scheduleStatusClass(status) {
+  if (status === "overdue") return "due";
+  if (status === "due_soon") return "soon";
+  if (status === "needs_setup") return "setup";
+  return "ok";
+}
+
+function renderHistorySchedule(schedule) {
+  const order = { overdue: 1, due_soon: 2, needs_setup: 3, ok: 4 };
+  const sorted = [...schedule].sort((a, b) => (order[a.status] || 5) - (order[b.status] || 5));
+  els.historyScheduleRows.innerHTML = cardsOrEmpty(sorted.map((item) => {
+    const statusClass = scheduleStatusClass(item.status);
+    return `
+      <article class="schedule-row ${statusClass}">
+        <div>
+          <strong>${escapeHtml(item.task_name)}</strong>
+          <span>${[item.next_due_mileage ? `${formatNumber(item.next_due_mileage)} mi` : "", item.next_due_date ? formatDate(item.next_due_date) : ""].filter(Boolean).join(" / ") || "Manual"}</span>
+          <small>${escapeHtml(item.notes || "")}</small>
+        </div>
+        <span class="pill ${statusClass}">${escapeHtml(String(item.status || "ok").replace("_", " "))}</span>
+        <button class="secondary compact" data-mark-complete="${item.id}" type="button">Mark Complete</button>
+      </article>
+    `;
+  }).join(""), "No maintenance schedule yet.");
+}
+
+function fillServiceRecordForm(record) {
+  els.serviceRecordId.value = record?.id || "";
+  els.serviceRecordFormTitle.textContent = record?.id ? "Edit Service Record" : "Add Service Record";
+  els.recordServiceDate.value = record?.service_date || todayValue();
+  els.recordMileage.value = record?.mileage ?? "";
+  els.recordRoNumber.value = record?.ro_number || "";
+  els.recordCategory.value = record?.category || "Maintenance";
+  els.recordServiceTitle.value = record?.service_title || "";
+  els.recordVendor.value = record?.vendor || "Toyota";
+  els.recordCustomerPaid.value = record?.customer_paid ?? "";
+  els.recordNotes.value = record?.notes || "";
+}
+
+function serviceRecordPayload() {
+  return {
+    id: els.serviceRecordId.value || undefined,
+    vehicle_id: selectedVehicleId(),
+    service_date: els.recordServiceDate.value,
+    mileage: els.recordMileage.value === "" ? null : Number(els.recordMileage.value),
+    ro_number: els.recordRoNumber.value.trim() || null,
+    category: els.recordCategory.value,
+    service_title: els.recordServiceTitle.value.trim(),
+    vendor: els.recordVendor.value.trim() || null,
+    customer_paid: els.recordCustomerPaid.value === "" ? null : Number(els.recordCustomerPaid.value),
+    notes: els.recordNotes.value.trim() || null,
+  };
+}
+
+async function saveServiceRecord(event) {
+  event.preventDefault();
+  const payload = serviceRecordPayload();
+  if (!payload.service_date) throw new Error("Service date is required.");
+  if (!payload.service_title) throw new Error("Service title is required.");
+  const editing = Boolean(payload.id);
+  setStatus(els.serviceHistoryStatus, editing ? "Updating service record..." : "Adding service record...");
+  await serviceFetch("vehicle_service_admin", {
+    method: editing ? "PATCH" : "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  fillServiceRecordForm(null);
+  await loadServiceHistory();
+}
+
+async function uploadServiceDocument() {
+  const file = els.serviceDocumentFile.files?.[0];
+  if (!file) throw new Error("Choose a document or photo first.");
+  const form = new FormData();
+  form.append("file", file);
+  form.append("vehicle_id", selectedVehicleId());
+  if (els.serviceRecordId.value) form.append("service_record_id", els.serviceRecordId.value);
+
+  setStatus(els.serviceHistoryStatus, "Uploading service document...");
+  await serviceFetch("vehicle_service_document_upload", {
+    method: "POST",
+    body: form,
+  });
+  els.serviceDocumentFile.value = "";
+  await loadServiceHistory();
+}
+
+async function markScheduleComplete(id) {
+  const item = (state.serviceModule?.schedule || []).find((row) => row.id === id);
+  if (!item) return;
+  const latestMileage = state.serviceModule?.vehicle?.current_mileage || state.summary?.latest?.[0]?.last_mileage || "";
+  setStatus(els.serviceHistoryStatus, "Marking maintenance complete...");
+  await serviceFetch("vehicle_service_admin?action=mark_complete", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id,
+      interval_miles: item.interval_miles,
+      interval_months: item.interval_months,
+      last_completed_mileage: latestMileage,
+      last_completed_date: todayValue(),
+      notes: item.notes,
+    }),
+  });
+  await loadServiceHistory();
+}
+
 async function saveService() {
   const vehicleId = selectedVehicleId();
   const serviceName = els.serviceName.value;
@@ -657,21 +927,25 @@ async function saveService() {
   if (cost !== null && cost < 0) throw new Error("Cost must be positive.");
 
   setStatus(els.serviceStatus, "Saving service...");
-  const { error } = await state.supabase.rpc("log_vehicle_maintenance_service", {
-    p_vehicle_id: vehicleId,
-    p_service_name: serviceName,
-    p_service_date: serviceDate,
-    p_mileage: mileage,
-    p_performed_by: performedBy,
-    p_cost: cost,
-    p_notes: notes,
+  await serviceFetch("vehicle_service_admin", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      vehicle_id: vehicleId,
+      service_date: serviceDate,
+      mileage,
+      vendor: performedBy,
+      category: "Maintenance",
+      service_title: serviceName,
+      customer_paid: cost,
+      notes,
+    }),
   });
-  if (error) throw error;
 
   els.serviceCost.value = "";
   els.serviceNotes.value = "";
   setStatus(els.serviceStatus, "Service saved.");
-  await loadDashboard();
+  await loadServiceHistory();
   closeServiceModal();
 }
 
@@ -783,9 +1057,73 @@ els.toggleLogsBtn.addEventListener("click", () => toggleExpanded("logs"));
 els.toggleServicesBtn.addEventListener("click", () => toggleExpanded("services"));
 els.toggleIncidentsBtn.addEventListener("click", () => toggleExpanded("incidents"));
 
+els.saveServiceAdminKeyBtn.addEventListener("click", () => {
+  localStorage.setItem("nudgeFleet.adminKey", adminKey());
+  loadServiceHistory().catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
+});
+
+els.refreshServiceHistoryBtn.addEventListener("click", () => {
+  loadServiceHistory().catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
+});
+
+[
+  els.historyDateFrom,
+  els.historyDateTo,
+  els.historyMileageMin,
+  els.historyMileageMax,
+  els.historyCategory,
+  els.historyVendor,
+  els.historyRo,
+].forEach((input) => {
+  input.addEventListener("input", renderServiceTimeline);
+  input.addEventListener("change", renderServiceTimeline);
+});
+
+els.clearHistoryFiltersBtn.addEventListener("click", () => {
+  [
+    els.historyDateFrom,
+    els.historyDateTo,
+    els.historyMileageMin,
+    els.historyMileageMax,
+    els.historyCategory,
+    els.historyVendor,
+    els.historyRo,
+  ].forEach((input) => {
+    input.value = "";
+  });
+  renderServiceTimeline();
+});
+
+els.serviceTimelineRows.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-edit-service-record]");
+  if (!button) return;
+  const record = (state.serviceModule?.records || []).find((row) => row.id === button.dataset.editServiceRecord);
+  if (record) fillServiceRecordForm(record);
+});
+
+els.historyScheduleRows.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-mark-complete]");
+  if (!button) return;
+  markScheduleComplete(button.dataset.markComplete)
+    .catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
+});
+
+els.serviceRecordForm.addEventListener("submit", (event) => {
+  saveServiceRecord(event).catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
+});
+
+els.resetServiceRecordBtn.addEventListener("click", () => {
+  fillServiceRecordForm(null);
+});
+
+els.uploadServiceDocumentBtn.addEventListener("click", () => {
+  uploadServiceDocument().catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
+});
+
 els.vehicleSelect.addEventListener("change", renderDashboard);
 els.rangeSelect.addEventListener("change", () => {
   loadDashboard().catch((error) => setStatus(els.dashboardStatus, error.message, true));
 });
 
+fillServiceRecordForm(null);
 initialize().catch((error) => setStatus(els.authStatus, error.message, true));

@@ -256,28 +256,12 @@ button.compact {
 }
 
 .vehicle-photo {
+  width: 100%;
   aspect-ratio: 4 / 3;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 4px;
+  display: block;
+  object-fit: cover;
   border-radius: 8px;
-  background:
-    linear-gradient(150deg, rgba(255,255,255,.75), rgba(255,255,255,.2)),
-    linear-gradient(135deg, #dfe6ef, #9eacba);
-  color: #233044;
   border: 1px solid #cfd7e1;
-  text-align: center;
-}
-
-.vehicle-photo span {
-  font-size: 14px;
-  font-weight: 800;
-  color: var(--muted);
-}
-
-.vehicle-photo strong {
-  font-size: 22px;
 }
 
 .vehicle-name {
@@ -674,6 +658,144 @@ th {
   margin-bottom: 18px;
 }
 
+.service-history-panel {
+  margin-bottom: 18px;
+}
+
+.history-admin-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto minmax(240px, .8fr);
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.service-summary-grid {
+  margin-bottom: 16px;
+}
+
+.service-history-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, .75fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.history-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.service-timeline {
+  display: grid;
+  gap: 10px;
+}
+
+.timeline-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.timeline-date {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.timeline-date strong {
+  color: var(--ink);
+}
+
+.timeline-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.timeline-row p {
+  color: #344054;
+  font-size: 13px;
+}
+
+.timeline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.history-side {
+  display: grid;
+  gap: 16px;
+}
+
+.history-side h3,
+.service-edit-form h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.service-edit-form {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfcfd;
+}
+
+.schedule-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.schedule-row.due { border-color: #f6b7b2; background: var(--bad-bg); }
+.schedule-row.soon { border-color: #f1d398; background: var(--warn-bg); }
+.schedule-row.setup { background: #f2f4f7; }
+
+.schedule-row strong,
+.schedule-row span,
+.schedule-row small {
+  display: block;
+}
+
+.schedule-row span,
+.schedule-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.schedule-row button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.pill.maintenance { background: var(--good-bg); color: var(--good); }
+.pill.inspection { background: #eaf2ff; color: var(--blue); }
+.pill.repair { background: var(--bad-bg); color: var(--bad); }
+.pill.body-repair { background: var(--warn-bg); color: var(--warn); }
+.pill.accessory { background: #f0e7ff; color: #6941c6; }
+.pill.major-service { background: #dbeafe; color: #1d4ed8; }
+
 .modal-shell {
   position: fixed;
   inset: 0;
@@ -795,8 +917,14 @@ th {
   .dashboard-main,
   .chart-layout,
   .lower-layout,
+  .service-history-layout,
   .auth-grid {
     grid-template-columns: 1fr;
+  }
+
+  .history-admin-row,
+  .history-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .dashboard-updated {
@@ -859,8 +987,18 @@ th {
   .status-facts,
   .metric-grid,
   .service-form,
+  .history-admin-row,
+  .history-filters,
   .row {
     grid-template-columns: 1fr;
+  }
+
+  .timeline-row {
+    grid-template-columns: 1fr;
+  }
+
+  .timeline-row button {
+    justify-self: start;
   }
 
   .maintenance-card {

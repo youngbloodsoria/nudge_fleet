@@ -79,10 +79,7 @@
 
       <section class="dashboard-grid status-layout">
         <article class="panel hero-status">
-          <div class="vehicle-photo" aria-hidden="true">
-            <span>2016</span>
-            <strong>Highlander</strong>
-          </div>
+          <img class="vehicle-photo" src="assets/highlander.jpeg" alt="2016 White Toyota Highlander" />
           <div class="hero-status-body">
             <div class="section-heading">
               <h2>Current Status</h2>
@@ -190,6 +187,138 @@
           <button class="secondary compact" id="toggleServicesBtn" type="button">View All Services</button>
         </div>
         <div class="forecast-list" id="serviceHistoryRows"></div>
+      </section>
+
+      <section class="panel service-history-panel">
+        <div class="section-heading">
+          <div>
+            <h2>Maintenance History</h2>
+            <p class="subtle">Toyota service timeline, lifetime costs, forecast, and admin service edits.</p>
+          </div>
+          <button class="secondary compact" id="refreshServiceHistoryBtn" type="button">Refresh History</button>
+        </div>
+
+        <div class="history-admin-row">
+          <div>
+            <label for="serviceAdminKey">Admin key</label>
+            <input id="serviceAdminKey" type="password" autocomplete="off" placeholder="Required for service history admin" />
+          </div>
+          <button class="secondary" id="saveServiceAdminKeyBtn" type="button">Save Key</button>
+          <div class="status" id="serviceHistoryStatus">Enter the admin key to load maintenance history.</div>
+        </div>
+
+        <div class="metric-grid service-summary-grid">
+          <article class="metric-tile">
+            <span class="metric-icon">MI</span>
+            <div>
+              <span>Current Mileage</span>
+              <strong id="historyCurrentMileage">-</strong>
+            </div>
+          </article>
+          <article class="metric-tile">
+            <span class="metric-icon">$</span>
+            <div>
+              <span>Customer Paid</span>
+              <strong id="historyCustomerPaid">-</strong>
+            </div>
+          </article>
+          <article class="metric-tile">
+            <span class="metric-icon">DLR</span>
+            <div>
+              <span>Dealer / Warranty</span>
+              <strong id="historyDealerPaid">-</strong>
+            </div>
+          </article>
+          <article class="metric-tile">
+            <span class="metric-icon">RO</span>
+            <div>
+              <span>Service Records</span>
+              <strong id="historyRecordCount">-</strong>
+            </div>
+          </article>
+        </div>
+
+        <div class="service-history-layout">
+          <div>
+            <div class="history-filters">
+              <div>
+                <label for="historyDateFrom">Date from</label>
+                <input id="historyDateFrom" type="date" />
+              </div>
+              <div>
+                <label for="historyDateTo">Date to</label>
+                <input id="historyDateTo" type="date" />
+              </div>
+              <div>
+                <label for="historyMileageMin">Min mileage</label>
+                <input id="historyMileageMin" type="number" inputmode="numeric" />
+              </div>
+              <div>
+                <label for="historyMileageMax">Max mileage</label>
+                <input id="historyMileageMax" type="number" inputmode="numeric" />
+              </div>
+              <div>
+                <label for="historyCategory">Category</label>
+                <select id="historyCategory">
+                  <option value="">All categories</option>
+                </select>
+              </div>
+              <div>
+                <label for="historyVendor">Vendor</label>
+                <input id="historyVendor" type="text" placeholder="Toyota" />
+              </div>
+              <div>
+                <label for="historyRo">RO number</label>
+                <input id="historyRo" type="text" placeholder="0487679" />
+              </div>
+              <button class="secondary" id="clearHistoryFiltersBtn" type="button">Clear Filters</button>
+            </div>
+
+            <div class="service-timeline" id="serviceTimelineRows"></div>
+          </div>
+
+          <aside class="history-side">
+            <div>
+              <h3>Upcoming Maintenance</h3>
+              <div class="maintenance-card-list" id="historyScheduleRows"></div>
+            </div>
+
+            <form class="service-edit-form" id="serviceRecordForm">
+              <h3 id="serviceRecordFormTitle">Add Service Record</h3>
+              <input id="serviceRecordId" type="hidden" />
+              <label for="recordServiceDate">Date</label>
+              <input id="recordServiceDate" type="date" required />
+              <label for="recordMileage">Mileage</label>
+              <input id="recordMileage" type="number" min="0" inputmode="numeric" />
+              <label for="recordRoNumber">RO number</label>
+              <input id="recordRoNumber" type="text" />
+              <label for="recordCategory">Category</label>
+              <select id="recordCategory">
+                <option>Maintenance</option>
+                <option>Inspection</option>
+                <option>Repair</option>
+                <option>Body / Repair</option>
+                <option>Accessory</option>
+                <option>Major Service</option>
+              </select>
+              <label for="recordServiceTitle">Service title</label>
+              <input id="recordServiceTitle" type="text" required />
+              <label for="recordVendor">Vendor</label>
+              <input id="recordVendor" type="text" placeholder="Toyota" />
+              <label for="recordCustomerPaid">Customer paid</label>
+              <input id="recordCustomerPaid" type="number" min="0" step="0.01" inputmode="decimal" />
+              <label for="recordNotes">Notes</label>
+              <textarea id="recordNotes" placeholder="Details, uncertainty, source notes"></textarea>
+              <div class="row">
+                <button id="saveServiceRecordBtn" type="submit">Save Record</button>
+                <button class="secondary" id="resetServiceRecordBtn" type="button">Reset</button>
+              </div>
+              <label for="serviceDocumentFile">Attach document/photo</label>
+              <input id="serviceDocumentFile" type="file" accept="image/*,.pdf" />
+              <button class="secondary" id="uploadServiceDocumentBtn" type="button">Attach Document</button>
+            </form>
+          </aside>
+        </div>
       </section>
     </section>
   </main>

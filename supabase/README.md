@@ -6,6 +6,23 @@ Then run `owner_access.sql` to add the owner allowlist and protected dashboard R
 
 Then run `alerts_and_100k_baseline.sql` to add alert summary support and seed a temporary 100k-mile Highlander maintenance baseline.
 
+Then run `migrations/0003_vehicle_service_history.sql` to create the full Toyota service-history module, import the known Highlander service records, and seed the maintenance forecast schedule.
+
+Deploy these Edge Functions for maintenance-history admin writes:
+
+```bash
+supabase functions deploy vehicle_service_admin
+supabase functions deploy vehicle_service_document_upload
+```
+
+Set these Edge Function secrets:
+
+```bash
+supabase secrets set ADMIN_PORTAL_KEY="your-long-admin-key"
+supabase secrets set SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
+supabase secrets set SERVICE_DOCUMENT_BUCKET="service-documents"
+```
+
 ## Vercel environment variables
 
 Set these in the Vercel project, then redeploy:
