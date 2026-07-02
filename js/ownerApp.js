@@ -19,7 +19,6 @@ const els = {
   magicLinkBtn: document.getElementById("magicLinkBtn"),
   signOutBtn: document.getElementById("signOutBtn"),
   refreshBtn: document.getElementById("refreshBtn"),
-  sendWeeklyReportBtn: document.getElementById("sendWeeklyReportBtn"),
   openServiceBtn: document.getElementById("openServiceBtn"),
   closeServiceBtn: document.getElementById("closeServiceBtn"),
   serviceModal: document.getElementById("serviceModal"),
@@ -290,7 +289,6 @@ function renderAuthState() {
   els.appPanel.hidden = !signedIn;
   els.signOutBtn.hidden = !signedIn;
   els.refreshBtn.hidden = !signedIn;
-  els.sendWeeklyReportBtn.hidden = !signedIn;
   els.openServiceBtn.hidden = !signedIn;
 }
 
@@ -326,24 +324,6 @@ async function loadDashboard() {
   renderVehicleOptions();
   renderDashboard();
   setStatus(els.dashboardStatus, `Dashboard updated: ${formatDateTime(new Date())}`);
-}
-
-async function sendWeeklyReportNow() {
-  if (!state.session?.access_token) throw new Error("Sign in again before sending the report.");
-
-  els.sendWeeklyReportBtn.disabled = true;
-  setStatus(els.dashboardStatus, "Sending weekly report email...");
-  const response = await fetch("/api/weekly-report", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${state.session.access_token}`,
-    },
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload.ok) {
-    throw new Error(payload.error || `Weekly report failed (${response.status})`);
-  }
-  setStatus(els.dashboardStatus, "Weekly report email sent.");
 }
 
 function renderVehicleOptions() {
@@ -783,14 +763,6 @@ els.signOutBtn.addEventListener("click", async () => {
 
 els.refreshBtn.addEventListener("click", () => {
   loadDashboard().catch((error) => setStatus(els.dashboardStatus, error.message, true));
-});
-
-els.sendWeeklyReportBtn.addEventListener("click", () => {
-  sendWeeklyReportNow()
-    .catch((error) => setStatus(els.dashboardStatus, error.message, true))
-    .finally(() => {
-      els.sendWeeklyReportBtn.disabled = false;
-    });
 });
 
 els.openServiceBtn.addEventListener("click", openServiceModal);
