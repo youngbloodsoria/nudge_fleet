@@ -216,6 +216,24 @@ async function markMaintenanceComplete(request: Request) {
   return updated?.[0] ?? updated;
 }
 
+async function resetMaintenanceSchedule(request: Request) {
+  const body = await request.json();
+  if (!body.id) throw new Error("Schedule id is required.");
+
+  const updated = await rest(`vehicle_maintenance_schedule?id=eq.${body.id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({
+      last_completed_mileage: null,
+      last_completed_date: null,
+      next_due_mileage: null,
+      next_due_date: null,
+      status: "needs_setup",
+    }),
+  });
+  return updated?.[0] ?? updated;
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -235,6 +253,9 @@ Deno.serve(async (request) => {
       const url = new URL(request.url);
       if (url.searchParams.get("action") === "mark_complete") {
         return json(200, { ok: true, data: await markMaintenanceComplete(request) });
+      }
+      if (url.searchParams.get("action") === "reset_schedule") {
+        return json(200, { ok: true, data: await resetMaintenanceSchedule(request) });
       }
       return json(200, { ok: true, data: await updateRecord(request) });
     }

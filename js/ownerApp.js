@@ -161,6 +161,14 @@ function selectedVehicleId() {
   return els.vehicleSelect.value || state.summary?.vehicles?.[0]?.id || "";
 }
 
+function selectedVehicleLatest() {
+  return (state.summary?.latest || []).find((row) => row.vehicle_id === selectedVehicleId()) || {};
+}
+
+function selectedVehicleMileage() {
+  return state.serviceModule?.vehicle?.current_mileage || selectedVehicleLatest().last_mileage || "";
+}
+
 function todayValue() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -858,15 +866,20 @@ function renderHistorySchedule(schedule) {
   const sorted = [...schedule].sort((a, b) => (order[a.status] || 5) - (order[b.status] || 5));
   els.historyScheduleRows.innerHTML = cardsOrEmpty(sorted.map((item) => {
     const statusClass = scheduleStatusClass(item.status);
+    const hasCompletion = item.last_completed_date || item.last_completed_mileage;
     return `
       <article class="schedule-row ${statusClass}">
         <div>
           <strong>${escapeHtml(item.task_name)}</strong>
           <span>${[item.next_due_mileage ? `${formatNumber(item.next_due_mileage)} mi` : "", item.next_due_date ? formatDate(item.next_due_date) : ""].filter(Boolean).join(" / ") || "Manual"}</span>
+          ${hasCompletion ? `<small>Last completed ${[item.last_completed_date ? formatDate(item.last_completed_date) : "", item.last_completed_mileage ? formatMileage(item.last_completed_mileage) : ""].filter(Boolean).join(" at ")}</small>` : ""}
           <small>${escapeHtml(item.notes || "")}</small>
         </div>
         <span class="pill ${statusClass}">${escapeHtml(String(item.status || "ok").replace("_", " "))}</span>
-        <button class="secondary compact" data-mark-complete="${item.id}" type="button">Mark Complete</button>
+        <div class="schedule-actions">
+          <button class="secondary compact" data-mark-complete="${item.id}" type="button">${hasCompletion ? "Update Done" : "Mark Complete"}</button>
+          ${hasCompletion ? `<button class="secondary compact" data-reset-schedule="${item.id}" type="button">Undo</button>` : ""}
+        </div>
       </article>
     `;
   }).join(""), "No maintenance schedule yet.");
@@ -936,7 +949,9 @@ async function uploadServiceDocument() {
 async function markScheduleComplete(id) {
   const item = (state.serviceModule?.schedule || []).find((row) => row.id === id);
   if (!item) return;
-  const latestMileage = state.serviceModule?.vehicle?.current_mileage || state.summary?.latest?.[0]?.last_mileage || "";
+  const completion = promptScheduleCompletion(item);
+  if (!completion) return;
+
   setStatus(els.serviceHistoryStatus, "Marking maintenance complete...");
   await serviceFetch("vehicle_service_admin?action=mark_complete", {
     method: "PATCH",
@@ -945,10 +960,53 @@ async function markScheduleComplete(id) {
       id,
       interval_miles: item.interval_miles,
       interval_months: item.interval_months,
-      last_completed_mileage: latestMileage,
-      last_completed_date: todayValue(),
+      last_completed_mileage: completion.mileage,
+      last_completed_date: completion.date,
       notes: item.notes,
     }),
+  });
+  await loadServiceHistory();
+}
+
+function promptScheduleCompletion(item) {
+  const defaultDate = item.last_completed_date || todayValue();
+  const defaultMileage = item.last_completed_mileage || selectedVehicleMileage() || "";
+  const date = window.prompt(`Completion date for ${item.task_name} (YYYY-MM-DD)`, defaultDate);
+  if (date === null) return null;
+  const normalizedDate = date.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+    throw new Error("Use a completion date like 2026-01-12.");
+  }
+  const parsedDate = new Date(`${normalizedDate}T00:00:00`);
+  if (Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== normalizedDate) {
+    throw new Error("Use a valid completion date.");
+  }
+
+  const mileage = window.prompt(`Mileage when ${item.task_name} was completed`, defaultMileage);
+  if (mileage === null) return null;
+  const normalizedMileage = mileage.trim();
+  const mileageValue = normalizedMileage === "" ? null : Number(normalizedMileage);
+  if (mileageValue !== null && (!Number.isFinite(mileageValue) || mileageValue < 0)) {
+    throw new Error("Mileage must be positive.");
+  }
+
+  return {
+    date: normalizedDate,
+    mileage: mileageValue,
+  };
+}
+
+async function resetScheduleCompletion(id) {
+  const item = (state.serviceModule?.schedule || []).find((row) => row.id === id);
+  if (!item) return;
+  const confirmed = window.confirm(`Undo the completion for ${item.task_name}? This clears the last completed date and mileage.`);
+  if (!confirmed) return;
+
+  setStatus(els.serviceHistoryStatus, "Undoing maintenance completion...");
+  await serviceFetch("vehicle_service_admin?action=reset_schedule", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id }),
   });
   await loadServiceHistory();
 }
@@ -1143,10 +1201,18 @@ els.serviceTimelineRows.addEventListener("click", (event) => {
 });
 
 els.historyScheduleRows.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-mark-complete]");
-  if (!button) return;
-  markScheduleComplete(button.dataset.markComplete)
-    .catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
+  const completeButton = event.target.closest("[data-mark-complete]");
+  if (completeButton) {
+    markScheduleComplete(completeButton.dataset.markComplete)
+      .catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
+    return;
+  }
+
+  const resetButton = event.target.closest("[data-reset-schedule]");
+  if (resetButton) {
+    resetScheduleCompletion(resetButton.dataset.resetSchedule)
+      .catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
+  }
 });
 
 els.serviceRecordForm.addEventListener("submit", (event) => {

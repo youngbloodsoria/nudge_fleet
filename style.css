@@ -784,8 +784,14 @@ th {
   font-size: 12px;
 }
 
-.schedule-row button {
+.schedule-actions {
   grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.schedule-row button {
   justify-self: start;
 }
 
