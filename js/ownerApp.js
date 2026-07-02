@@ -384,7 +384,6 @@ function renderDashboard() {
   const latest = (state.summary.latest || []).find((row) => row.vehicle_id === vehicleId) || {};
   const maintenance = (state.summary.maintenance || []).filter((row) => row.vehicle_id === vehicleId);
   const incidents = (state.summary.incidents || []).filter((row) => row.vehicle_id === vehicleId);
-  const serviceHistory = (state.summary.service_history || []).filter((row) => row.vehicle_id === vehicleId);
   const rate = usageRate(logs);
   const deltas = mileageDeltas(logs);
   const daily = dailyMileage(logs);
@@ -393,6 +392,8 @@ function renderDashboard() {
   const returnCount = logs.filter((row) => row.log_type === "return").length;
   const incidentCount = incidents.reduce((total, row) => total + Number(row.incident_count || 0), 0);
   const maxDailyMiles = daily.length ? Math.max(...daily.map((row) => row.miles)) : 0;
+  const serviceModuleMatches = state.serviceModule?.vehicle?.id === vehicleId;
+  const serviceRecords = adminKey() && serviceModuleMatches ? state.serviceModule?.records || [] : [];
 
   renderCurrentStatus(latest);
   renderAtGlance(maintenance, incidents, rate);
@@ -401,7 +402,10 @@ function renderDashboard() {
   renderDailyMileageChart(daily, rate);
   renderMaintenanceRunway(logs, maintenance, rate);
   renderServiceForm(vehicleId, latest, maintenance);
-  renderServiceHistory(serviceHistory);
+  renderServiceHistory(
+    serviceRecords,
+    adminKey() ? "No service records returned from Supabase." : "Enter the admin key to load service records.",
+  );
   renderIncidentSummary(incidents);
   renderRecent(logs);
   if (els.serviceAdminKey.value) {
@@ -671,7 +675,7 @@ function renderServiceForm(vehicleId, latest, maintenance) {
   els.saveServiceBtn.disabled = !vehicleId || !serviceNames.length;
 }
 
-function renderServiceHistory(history) {
+function renderServiceHistory(history, emptyMessage = "No service records returned from Supabase.") {
   const sorted = [...history].sort((a, b) => new Date(b.service_date) - new Date(a.service_date));
   const visible = state.expanded.services ? sorted : sorted.slice(0, VISIBLE_LIMIT.services);
   els.toggleServicesBtn.hidden = sorted.length <= VISIBLE_LIMIT.services;
@@ -679,13 +683,15 @@ function renderServiceHistory(history) {
   els.serviceHistoryRows.innerHTML = cardsOrEmpty(visible.map((event) => `
     <article class="forecast-item">
       <div>
-        <div class="alert-title">${escapeHtml(event.service_name)}</div>
+        <div class="alert-title">${escapeHtml(event.service_title || event.service_name || "Service record")}</div>
         <div class="subtle">${formatDate(event.service_date)} - ${formatMileage(event.mileage)}</div>
-        <div class="subtle">${escapeHtml(event.performed_by || "")}${event.cost ? ` - $${Number(event.cost).toFixed(2)}` : ""}</div>
-        ${event.notes ? `<div class="alert-note">${escapeHtml(event.notes)}</div>` : ""}
+        <div class="subtle">
+          ${escapeHtml([event.category, event.ro_number ? `RO ${event.ro_number}` : "", event.customer_paid !== null && event.customer_paid !== undefined ? formatCurrency(event.customer_paid) : ""].filter(Boolean).join(" - "))}
+        </div>
+        ${event.service_description ? `<div class="alert-note">${escapeHtml(event.service_description)}</div>` : ""}
       </div>
     </article>
-  `).join(""), "No services logged yet.");
+  `).join(""), emptyMessage);
 }
 
 function adminKey() {
@@ -770,6 +776,7 @@ function renderServiceModule() {
   els.historyCustomerPaid.textContent = formatCurrency(totals.customer_paid || 0);
   els.historyDealerPaid.textContent = formatCurrency(dealerPaid);
   els.historyRecordCount.textContent = formatNumber((data.records || []).length);
+  renderServiceHistory(data.records || []);
   renderServiceTimeline();
   renderHistorySchedule(data.schedule || []);
 }

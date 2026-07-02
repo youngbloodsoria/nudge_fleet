@@ -308,8 +308,8 @@ begin
     rule.service_name,
     service_date,
     100000,
-    'Toyota service baseline',
-    'Temporary 100k-mile baseline from owner note. Replace with exact Toyota invoice details when available.'
+    'Legacy maintenance-event import',
+    'Legacy maintenance-event import retained for older dashboards. Use vehicle_service_records for Toyota invoice details.'
   from nudge_fleet.vehicle_maintenance_rules rule
   join nudge_fleet.vehicles vehicle on vehicle.id = rule.vehicle_id
   where lower(coalesce(vehicle.name, '')) like '%highlander%'
