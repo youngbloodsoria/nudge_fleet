@@ -758,15 +758,15 @@ async function serviceFetch(name, options = {}) {
   return payload.data;
 }
 
-async function loadServiceHistory() {
+async function loadServiceHistory({ force = false } = {}) {
   if (!state.config?.supabaseUrl) return;
-  if (state.loadingServiceHistory) return;
+  if (state.loadingServiceHistory && !force) return;
 
   state.loadingServiceHistory = true;
   setStatus(els.serviceHistoryStatus, "Loading maintenance history...");
   try {
     const vehicleId = selectedVehicleId();
-    const data = await serviceFetch(`vehicle_service_admin?vehicle_id=${encodeURIComponent(vehicleId)}`, { requireAdmin: false });
+    const data = await serviceFetch(`vehicle_service_admin?vehicle_id=${encodeURIComponent(vehicleId)}&_=${Date.now()}`, { requireAdmin: false });
     state.serviceModule = data;
     populateHistoryCategoryFilter(data.records || []);
     renderServiceModule();
@@ -775,6 +775,15 @@ async function loadServiceHistory() {
   } finally {
     state.loadingServiceHistory = false;
   }
+}
+
+function applyScheduleUpdate(updatedItem) {
+  if (!updatedItem || !state.serviceModule?.schedule) return;
+  state.serviceModule.schedule = state.serviceModule.schedule.map((item) => (
+    item.id === updatedItem.id ? { ...item, ...updatedItem } : item
+  ));
+  renderServiceModule();
+  renderDashboard();
 }
 
 function populateHistoryCategoryFilter(records) {
@@ -953,7 +962,7 @@ async function markScheduleComplete(id) {
   if (!completion) return;
 
   setStatus(els.serviceHistoryStatus, "Marking maintenance complete...");
-  await serviceFetch("vehicle_service_admin?action=mark_complete", {
+  const updatedItem = await serviceFetch("vehicle_service_admin?action=mark_complete", {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -965,7 +974,9 @@ async function markScheduleComplete(id) {
       notes: item.notes,
     }),
   });
-  await loadServiceHistory();
+  applyScheduleUpdate(updatedItem);
+  setStatus(els.serviceHistoryStatus, "Maintenance item updated.");
+  await loadServiceHistory({ force: true });
 }
 
 function promptScheduleCompletion(item) {
@@ -1003,12 +1014,14 @@ async function resetScheduleCompletion(id) {
   if (!confirmed) return;
 
   setStatus(els.serviceHistoryStatus, "Undoing maintenance completion...");
-  await serviceFetch("vehicle_service_admin?action=reset_schedule", {
+  const updatedItem = await serviceFetch("vehicle_service_admin?action=reset_schedule", {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ id }),
   });
-  await loadServiceHistory();
+  applyScheduleUpdate(updatedItem);
+  setStatus(els.serviceHistoryStatus, "Maintenance completion undone.");
+  await loadServiceHistory({ force: true });
 }
 
 async function saveService() {
