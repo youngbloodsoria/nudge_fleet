@@ -886,6 +886,7 @@ function renderHistorySchedule(schedule) {
         </div>
         <span class="pill ${statusClass}">${escapeHtml(String(item.status || "ok").replace("_", " "))}</span>
         <div class="schedule-actions">
+          <button class="secondary compact" data-edit-schedule="${item.id}" type="button">${item.status === "needs_setup" ? "Set Up" : "Edit Schedule"}</button>
           <button class="secondary compact" data-mark-complete="${item.id}" type="button">${hasCompletion ? "Update Done" : "Mark Complete"}</button>
           ${hasCompletion ? `<button class="secondary compact" data-reset-schedule="${item.id}" type="button">Undo</button>` : ""}
         </div>
@@ -979,32 +980,90 @@ async function markScheduleComplete(id) {
   await loadServiceHistory({ force: true });
 }
 
+function promptNumber(message, defaultValue, { required = false } = {}) {
+  const value = window.prompt(message, defaultValue ?? "");
+  if (value === null) return { cancelled: true, value: null };
+  const trimmed = value.trim();
+  if (!trimmed) {
+    if (required) throw new Error("This field is required.");
+    return { cancelled: false, value: null };
+  }
+  const numberValue = Number(trimmed);
+  if (!Number.isFinite(numberValue) || numberValue < 0) {
+    throw new Error("Use a positive number.");
+  }
+  return { cancelled: false, value: numberValue };
+}
+
+function promptDate(message, defaultValue, { required = false } = {}) {
+  const value = window.prompt(message, defaultValue ?? "");
+  if (value === null) return { cancelled: true, value: null };
+  const trimmed = value.trim();
+  if (!trimmed) {
+    if (required) throw new Error("This field is required.");
+    return { cancelled: false, value: null };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    throw new Error("Use a date like 2026-01-12.");
+  }
+  const parsedDate = new Date(`${trimmed}T00:00:00`);
+  if (Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== trimmed) {
+    throw new Error("Use a valid date.");
+  }
+  return { cancelled: false, value: trimmed };
+}
+
 function promptScheduleCompletion(item) {
   const defaultDate = item.last_completed_date || todayValue();
   const defaultMileage = item.last_completed_mileage || selectedVehicleMileage() || "";
-  const date = window.prompt(`Completion date for ${item.task_name} (YYYY-MM-DD)`, defaultDate);
-  if (date === null) return null;
-  const normalizedDate = date.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
-    throw new Error("Use a completion date like 2026-01-12.");
-  }
-  const parsedDate = new Date(`${normalizedDate}T00:00:00`);
-  if (Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== normalizedDate) {
-    throw new Error("Use a valid completion date.");
-  }
-
-  const mileage = window.prompt(`Mileage when ${item.task_name} was completed`, defaultMileage);
-  if (mileage === null) return null;
-  const normalizedMileage = mileage.trim();
-  const mileageValue = normalizedMileage === "" ? null : Number(normalizedMileage);
-  if (mileageValue !== null && (!Number.isFinite(mileageValue) || mileageValue < 0)) {
-    throw new Error("Mileage must be positive.");
-  }
+  const date = promptDate(`Completion date for ${item.task_name} (YYYY-MM-DD)`, defaultDate, { required: true });
+  if (date.cancelled) return null;
+  const mileage = promptNumber(`Mileage when ${item.task_name} was completed`, defaultMileage);
+  if (mileage.cancelled) return null;
 
   return {
-    date: normalizedDate,
-    mileage: mileageValue,
+    date: date.value,
+    mileage: mileage.value,
   };
+}
+
+function promptScheduleSetup(item) {
+  const intervalMiles = promptNumber(`Interval miles for ${item.task_name} (blank if date-only)`, item.interval_miles ?? "");
+  if (intervalMiles.cancelled) return null;
+  const intervalMonths = promptNumber(`Interval months for ${item.task_name} (blank if mileage-only)`, item.interval_months ?? "");
+  if (intervalMonths.cancelled) return null;
+  const lastCompletedDate = promptDate(`Last completed date for ${item.task_name} (YYYY-MM-DD, blank if unknown)`, item.last_completed_date || "");
+  if (lastCompletedDate.cancelled) return null;
+  const lastCompletedMileage = promptNumber(`Last completed mileage for ${item.task_name} (blank if unknown)`, item.last_completed_mileage ?? selectedVehicleMileage() ?? "");
+  if (lastCompletedMileage.cancelled) return null;
+  const notes = window.prompt(`Notes for ${item.task_name}`, item.notes || "");
+  if (notes === null) return null;
+
+  return {
+    interval_miles: intervalMiles.value,
+    interval_months: intervalMonths.value,
+    last_completed_date: lastCompletedDate.value,
+    last_completed_mileage: lastCompletedMileage.value,
+    current_mileage: selectedVehicleMileage() || null,
+    notes: notes.trim() || null,
+  };
+}
+
+async function editScheduleItem(id) {
+  const item = (state.serviceModule?.schedule || []).find((row) => row.id === id);
+  if (!item) return;
+  const payload = promptScheduleSetup(item);
+  if (!payload) return;
+
+  setStatus(els.serviceHistoryStatus, "Updating maintenance setup...");
+  const updatedItem = await serviceFetch("vehicle_service_admin?action=update_schedule", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id, ...payload }),
+  });
+  applyScheduleUpdate(updatedItem);
+  setStatus(els.serviceHistoryStatus, "Maintenance setup updated.");
+  await loadServiceHistory({ force: true });
 }
 
 async function resetScheduleCompletion(id) {
@@ -1214,6 +1273,13 @@ els.serviceTimelineRows.addEventListener("click", (event) => {
 });
 
 els.historyScheduleRows.addEventListener("click", (event) => {
+  const editButton = event.target.closest("[data-edit-schedule]");
+  if (editButton) {
+    editScheduleItem(editButton.dataset.editSchedule)
+      .catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
+    return;
+  }
+
   const completeButton = event.target.closest("[data-mark-complete]");
   if (completeButton) {
     markScheduleComplete(completeButton.dataset.markComplete)

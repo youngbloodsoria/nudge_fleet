@@ -216,6 +216,59 @@ async function markMaintenanceComplete(request: Request) {
   return updated?.[0] ?? updated;
 }
 
+function addMonths(dateValue: string, months: number) {
+  const date = new Date(`${dateValue}T00:00:00Z`);
+  date.setUTCMonth(date.getUTCMonth() + months);
+  return date.toISOString().slice(0, 10);
+}
+
+function scheduleStatus(nextDueMileage: number | null, nextDueDate: string | null, currentMileage: number | null) {
+  const today = new Date();
+  const dueDate = nextDueDate ? new Date(`${nextDueDate}T00:00:00Z`) : null;
+  const daysUntilDue = dueDate ? Math.ceil((dueDate.getTime() - today.getTime()) / 86400000) : null;
+  const milesUntilDue = nextDueMileage !== null && currentMileage !== null ? nextDueMileage - currentMileage : null;
+
+  if ((daysUntilDue !== null && daysUntilDue < 0) || (milesUntilDue !== null && milesUntilDue < 0)) return "overdue";
+  if ((daysUntilDue !== null && daysUntilDue <= 14) || (milesUntilDue !== null && milesUntilDue <= 500)) return "due_soon";
+  if (!nextDueMileage && !nextDueDate) return "needs_setup";
+  return "ok";
+}
+
+function optionalNumber(value: unknown) {
+  if (value === "" || value === null || value === undefined) return null;
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+async function updateMaintenanceSchedule(request: Request) {
+  const body = await request.json();
+  if (!body.id) throw new Error("Schedule id is required.");
+
+  const intervalMiles = optionalNumber(body.interval_miles);
+  const intervalMonths = optionalNumber(body.interval_months);
+  const lastCompletedMileage = optionalNumber(body.last_completed_mileage);
+  const lastCompletedDate = body.last_completed_date || null;
+  const currentMileage = optionalNumber(body.current_mileage);
+  const nextDueMileage = intervalMiles && lastCompletedMileage ? lastCompletedMileage + intervalMiles : null;
+  const nextDueDate = intervalMonths && lastCompletedDate ? addMonths(lastCompletedDate, intervalMonths) : null;
+
+  const updated = await rest(`vehicle_maintenance_schedule?id=eq.${body.id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({
+      interval_miles: intervalMiles,
+      interval_months: intervalMonths,
+      last_completed_mileage: lastCompletedMileage,
+      last_completed_date: lastCompletedDate,
+      next_due_mileage: nextDueMileage,
+      next_due_date: nextDueDate,
+      status: scheduleStatus(nextDueMileage, nextDueDate, currentMileage),
+      notes: body.notes,
+    }),
+  });
+  return updated?.[0] ?? updated;
+}
+
 async function resetMaintenanceSchedule(request: Request) {
   const body = await request.json();
   if (!body.id) throw new Error("Schedule id is required.");
@@ -253,6 +306,9 @@ Deno.serve(async (request) => {
       const url = new URL(request.url);
       if (url.searchParams.get("action") === "mark_complete") {
         return json(200, { ok: true, data: await markMaintenanceComplete(request) });
+      }
+      if (url.searchParams.get("action") === "update_schedule") {
+        return json(200, { ok: true, data: await updateMaintenanceSchedule(request) });
       }
       if (url.searchParams.get("action") === "reset_schedule") {
         return json(200, { ok: true, data: await resetMaintenanceSchedule(request) });
