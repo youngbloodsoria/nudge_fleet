@@ -284,6 +284,39 @@
               <div class="maintenance-card-list" id="historyScheduleRows"></div>
             </div>
 
+            <form class="service-edit-form maintenance-edit-form" id="scheduleEditForm">
+              <h3 id="scheduleEditFormTitle">Maintenance Setup</h3>
+              <p class="subtle" id="scheduleEditHint">Choose a maintenance item above to set its cadence or mark it resolved.</p>
+              <input id="scheduleItemId" type="hidden" />
+              <label for="scheduleTaskName">Maintenance item</label>
+              <input id="scheduleTaskName" type="text" disabled />
+              <div class="form-grid two-col">
+                <div>
+                  <label for="scheduleIntervalMiles">Interval miles</label>
+                  <input id="scheduleIntervalMiles" type="number" min="0" inputmode="numeric" placeholder="5000" />
+                </div>
+                <div>
+                  <label for="scheduleIntervalMonths">Interval months</label>
+                  <input id="scheduleIntervalMonths" type="number" min="0" inputmode="numeric" placeholder="6" />
+                </div>
+                <div>
+                  <label for="scheduleLastDate">Last completed date</label>
+                  <input id="scheduleLastDate" type="date" />
+                </div>
+                <div>
+                  <label for="scheduleLastMileage">Last completed mileage</label>
+                  <input id="scheduleLastMileage" type="number" min="0" inputmode="numeric" />
+                </div>
+              </div>
+              <label for="scheduleNotes">Resolution / setup notes</label>
+              <textarea id="scheduleNotes" placeholder="Example: tire rotation completed at Discount Tire; flat tire resolved."></textarea>
+              <div class="schedule-preview" id="schedulePreview">Next due will calculate after saving.</div>
+              <div class="row">
+                <button id="saveScheduleBtn" type="submit">Save Maintenance</button>
+                <button class="secondary" id="resetScheduleBtn" type="button">Clear</button>
+              </div>
+            </form>
+
             <form class="service-edit-form" id="serviceRecordForm">
               <h3 id="serviceRecordFormTitle">Add Service Record</h3>
               <input id="serviceRecordId" type="hidden" />

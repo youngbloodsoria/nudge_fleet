@@ -64,6 +64,19 @@ const els = {
   clearHistoryFiltersBtn: document.getElementById("clearHistoryFiltersBtn"),
   serviceTimelineRows: document.getElementById("serviceTimelineRows"),
   historyScheduleRows: document.getElementById("historyScheduleRows"),
+  scheduleEditForm: document.getElementById("scheduleEditForm"),
+  scheduleEditFormTitle: document.getElementById("scheduleEditFormTitle"),
+  scheduleEditHint: document.getElementById("scheduleEditHint"),
+  scheduleItemId: document.getElementById("scheduleItemId"),
+  scheduleTaskName: document.getElementById("scheduleTaskName"),
+  scheduleIntervalMiles: document.getElementById("scheduleIntervalMiles"),
+  scheduleIntervalMonths: document.getElementById("scheduleIntervalMonths"),
+  scheduleLastDate: document.getElementById("scheduleLastDate"),
+  scheduleLastMileage: document.getElementById("scheduleLastMileage"),
+  scheduleNotes: document.getElementById("scheduleNotes"),
+  schedulePreview: document.getElementById("schedulePreview"),
+  saveScheduleBtn: document.getElementById("saveScheduleBtn"),
+  resetScheduleBtn: document.getElementById("resetScheduleBtn"),
   serviceRecordForm: document.getElementById("serviceRecordForm"),
   serviceRecordFormTitle: document.getElementById("serviceRecordFormTitle"),
   serviceRecordId: document.getElementById("serviceRecordId"),
@@ -333,6 +346,14 @@ function dueTargetLabel(item) {
     item.due_mileage ? `Due at ${formatMileage(item.due_mileage)}` : "",
     item.due_date ? formatDate(item.due_date) : "",
   ].filter(Boolean).join(" / ") || "Next due not set";
+}
+
+function addMonthsLocal(dateValue, months) {
+  if (!dateValue || !months) return null;
+  const date = new Date(`${dateValue}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setMonth(date.getMonth() + Number(months));
+  return date.toISOString().slice(0, 10);
 }
 
 async function initialize() {
@@ -968,115 +989,89 @@ async function uploadServiceDocument() {
 async function markScheduleComplete(id) {
   const item = (state.serviceModule?.schedule || []).find((row) => row.id === id);
   if (!item) return;
-  const completion = promptScheduleCompletion(item);
-  if (!completion) return;
-
-  setStatus(els.serviceHistoryStatus, "Marking maintenance complete...");
-  const updatedItem = await serviceFetch("vehicle_service_admin?action=mark_complete", {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      id,
-      interval_miles: item.interval_miles,
-      interval_months: item.interval_months,
-      last_completed_mileage: completion.mileage,
-      last_completed_date: completion.date,
-      current_mileage: selectedVehicleMileage() || null,
-      notes: completion.notes,
-    }),
+  fillScheduleForm(item, {
+    mode: "resolve",
+    date: item.last_completed_date || todayValue(),
+    mileage: item.last_completed_mileage || selectedVehicleMileage(),
+    notes: item.notes || `${item.task_name} resolved.`,
   });
-  applyScheduleUpdate(updatedItem);
-  setStatus(els.serviceHistoryStatus, "Maintenance item updated.");
-  await loadServiceHistory({ force: true });
 }
 
-function promptNumber(message, defaultValue, { required = false } = {}) {
-  const value = window.prompt(message, defaultValue ?? "");
-  if (value === null) return { cancelled: true, value: null };
-  const trimmed = value.trim();
-  if (!trimmed) {
-    if (required) throw new Error("This field is required.");
-    return { cancelled: false, value: null };
-  }
-  const numberValue = Number(trimmed);
-  if (!Number.isFinite(numberValue) || numberValue < 0) {
-    throw new Error("Use a positive number.");
-  }
-  return { cancelled: false, value: numberValue };
+function fillScheduleForm(item, options = {}) {
+  els.scheduleItemId.value = item?.id || "";
+  els.scheduleTaskName.value = item?.task_name || "";
+  els.scheduleIntervalMiles.value = item?.interval_miles ?? "";
+  els.scheduleIntervalMonths.value = item?.interval_months ?? "";
+  els.scheduleLastDate.value = options.date ?? item?.last_completed_date ?? "";
+  els.scheduleLastMileage.value = options.mileage ?? item?.last_completed_mileage ?? "";
+  els.scheduleNotes.value = options.notes ?? item?.notes ?? "";
+  els.scheduleEditFormTitle.textContent = item?.task_name ? `${item.task_name} Maintenance` : "Maintenance Setup";
+  els.scheduleEditHint.textContent = options.mode === "resolve"
+    ? "Review the date, mileage, and notes, then save to mark this item resolved."
+    : "Set the cadence and last completed details. The next due mileage/date is calculated when saved.";
+  updateSchedulePreview();
+  els.scheduleEditForm.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-function promptDate(message, defaultValue, { required = false } = {}) {
-  const value = window.prompt(message, defaultValue ?? "");
-  if (value === null) return { cancelled: true, value: null };
-  const trimmed = value.trim();
-  if (!trimmed) {
-    if (required) throw new Error("This field is required.");
-    return { cancelled: false, value: null };
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    throw new Error("Use a date like 2026-01-12.");
-  }
-  const parsedDate = new Date(`${trimmed}T00:00:00`);
-  if (Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== trimmed) {
-    throw new Error("Use a valid date.");
-  }
-  return { cancelled: false, value: trimmed };
+function clearScheduleForm() {
+  fillScheduleForm(null);
+  els.scheduleEditFormTitle.textContent = "Maintenance Setup";
+  els.scheduleEditHint.textContent = "Choose a maintenance item above to set its cadence or mark it resolved.";
+  els.schedulePreview.textContent = "Next due will calculate after saving.";
 }
 
-function promptScheduleCompletion(item) {
-  const defaultDate = item.last_completed_date || todayValue();
-  const defaultMileage = item.last_completed_mileage || selectedVehicleMileage() || "";
-  const date = promptDate(`Completion date for ${item.task_name} (YYYY-MM-DD)`, defaultDate, { required: true });
-  if (date.cancelled) return null;
-  const mileage = promptNumber(`Mileage when ${item.task_name} was completed`, defaultMileage);
-  if (mileage.cancelled) return null;
-  const notes = window.prompt(`Resolution notes for ${item.task_name}`, item.notes || `${item.task_name} completed.`);
-  if (notes === null) return null;
+function scheduleFormPayload() {
+  if (!els.scheduleItemId.value) throw new Error("Choose a maintenance item first.");
+  const intervalMiles = els.scheduleIntervalMiles.value === "" ? null : Number(els.scheduleIntervalMiles.value);
+  const intervalMonths = els.scheduleIntervalMonths.value === "" ? null : Number(els.scheduleIntervalMonths.value);
+  const lastCompletedMileage = els.scheduleLastMileage.value === "" ? null : Number(els.scheduleLastMileage.value);
+  if (intervalMiles !== null && (!Number.isFinite(intervalMiles) || intervalMiles < 0)) throw new Error("Interval miles must be positive.");
+  if (intervalMonths !== null && (!Number.isFinite(intervalMonths) || intervalMonths < 0)) throw new Error("Interval months must be positive.");
+  if (lastCompletedMileage !== null && (!Number.isFinite(lastCompletedMileage) || lastCompletedMileage < 0)) throw new Error("Last completed mileage must be positive.");
 
   return {
-    date: date.value,
-    mileage: mileage.value,
-    notes: notes.trim() || null,
-  };
-}
-
-function promptScheduleSetup(item) {
-  const intervalMiles = promptNumber(`Interval miles for ${item.task_name} (blank if date-only)`, item.interval_miles ?? "");
-  if (intervalMiles.cancelled) return null;
-  const intervalMonths = promptNumber(`Interval months for ${item.task_name} (blank if mileage-only)`, item.interval_months ?? "");
-  if (intervalMonths.cancelled) return null;
-  const lastCompletedDate = promptDate(`Last completed date for ${item.task_name} (YYYY-MM-DD, blank if unknown)`, item.last_completed_date || "");
-  if (lastCompletedDate.cancelled) return null;
-  const lastCompletedMileage = promptNumber(`Last completed mileage for ${item.task_name} (blank if unknown)`, item.last_completed_mileage ?? selectedVehicleMileage() ?? "");
-  if (lastCompletedMileage.cancelled) return null;
-  const notes = window.prompt(`Notes for ${item.task_name}`, item.notes || "");
-  if (notes === null) return null;
-
-  return {
-    interval_miles: intervalMiles.value,
-    interval_months: intervalMonths.value,
-    last_completed_date: lastCompletedDate.value,
-    last_completed_mileage: lastCompletedMileage.value,
+    id: els.scheduleItemId.value,
+    interval_miles: intervalMiles,
+    interval_months: intervalMonths,
+    last_completed_date: els.scheduleLastDate.value || null,
+    last_completed_mileage: lastCompletedMileage,
     current_mileage: selectedVehicleMileage() || null,
-    notes: notes.trim() || null,
+    notes: els.scheduleNotes.value.trim() || null,
   };
 }
 
-async function editScheduleItem(id) {
-  const item = (state.serviceModule?.schedule || []).find((row) => row.id === id);
-  if (!item) return;
-  const payload = promptScheduleSetup(item);
-  if (!payload) return;
+function updateSchedulePreview() {
+  const intervalMiles = els.scheduleIntervalMiles.value === "" ? null : Number(els.scheduleIntervalMiles.value);
+  const intervalMonths = els.scheduleIntervalMonths.value === "" ? null : Number(els.scheduleIntervalMonths.value);
+  const lastMileage = els.scheduleLastMileage.value === "" ? null : Number(els.scheduleLastMileage.value);
+  const lastDate = els.scheduleLastDate.value || null;
+  const nextMileage = intervalMiles && lastMileage ? lastMileage + intervalMiles : null;
+  const nextDate = intervalMonths && lastDate ? addMonthsLocal(lastDate, intervalMonths) : null;
+  els.schedulePreview.textContent = [
+    nextMileage ? `Next due at ${formatMileage(nextMileage)}` : "",
+    nextDate ? formatDate(nextDate) : "",
+  ].filter(Boolean).join(" / ") || "Next due will calculate after saving.";
+}
 
-  setStatus(els.serviceHistoryStatus, "Updating maintenance setup...");
+async function saveScheduleSetup(event) {
+  event.preventDefault();
+  const payload = scheduleFormPayload();
+  setStatus(els.serviceHistoryStatus, "Saving maintenance setup...");
   const updatedItem = await serviceFetch("vehicle_service_admin?action=update_schedule", {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id, ...payload }),
+    body: JSON.stringify(payload),
   });
   applyScheduleUpdate(updatedItem);
-  setStatus(els.serviceHistoryStatus, "Maintenance setup updated.");
+  fillScheduleForm(updatedItem);
+  setStatus(els.serviceHistoryStatus, "Maintenance setup saved.");
   await loadServiceHistory({ force: true });
+}
+
+function editScheduleItem(id) {
+  const item = (state.serviceModule?.schedule || []).find((row) => row.id === id);
+  if (!item) return;
+  fillScheduleForm(item);
 }
 
 async function resetScheduleCompletion(id) {
@@ -1321,8 +1316,7 @@ els.serviceTimelineRows.addEventListener("click", (event) => {
 els.historyScheduleRows.addEventListener("click", (event) => {
   const editButton = event.target.closest("[data-edit-schedule]");
   if (editButton) {
-    editScheduleItem(editButton.dataset.editSchedule)
-      .catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
+    editScheduleItem(editButton.dataset.editSchedule);
     return;
   }
 
@@ -1339,6 +1333,22 @@ els.historyScheduleRows.addEventListener("click", (event) => {
       .catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
   }
 });
+
+els.scheduleEditForm.addEventListener("submit", (event) => {
+  saveScheduleSetup(event).catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
+});
+
+[
+  els.scheduleIntervalMiles,
+  els.scheduleIntervalMonths,
+  els.scheduleLastDate,
+  els.scheduleLastMileage,
+].forEach((input) => {
+  input.addEventListener("input", updateSchedulePreview);
+  input.addEventListener("change", updateSchedulePreview);
+});
+
+els.resetScheduleBtn.addEventListener("click", clearScheduleForm);
 
 els.serviceRecordForm.addEventListener("submit", (event) => {
   saveServiceRecord(event).catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
