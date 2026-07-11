@@ -451,15 +451,17 @@ function renderDashboard() {
   const estimatedMiles = deltas.reduce((total, row) => total + row.delta, 0);
   const checkoutCount = logs.filter((row) => row.log_type === "checkout").length;
   const returnCount = logs.filter((row) => row.log_type === "return").length;
-  const incidentCount = incidents.reduce((total, row) => total + Number(row.incident_count || 0), 0);
   const maxDailyMiles = daily.length ? Math.max(...daily.map((row) => row.miles)) : 0;
   const serviceModuleMatches = state.serviceModule?.vehicle?.id === vehicleId;
   const serviceRecords = serviceModuleMatches ? state.serviceModule?.records || [] : [];
   const incidentDetails = serviceModuleMatches ? state.serviceModule?.incidents || [] : [];
+  const incidentCount = serviceModuleMatches
+    ? incidentDetails.filter((row) => !row.is_resolved).length
+    : incidents.reduce((total, row) => total + Number(row.incident_count || 0), 0);
   const activeMaintenance = serviceModuleMatches ? activeMaintenanceItems(maintenance) : maintenance.map(normalizeMaintenanceItem);
 
   renderCurrentStatus(latest);
-  renderAtGlance(activeMaintenance, incidents, rate);
+  renderAtGlance(activeMaintenance, incidents, rate, incidentCount);
   renderMetrics({ estimatedMiles, logs, checkoutCount, returnCount, incidentCount, rate, maxDailyMiles });
   renderMaintenanceCards(activeMaintenance, latest, rate);
   renderDailyMileageChart(daily, rate);
@@ -488,8 +490,8 @@ function renderCurrentStatus(latest) {
   els.currentStatusMileage.textContent = formatMileage(latest.last_mileage);
 }
 
-function renderAtGlance(maintenance, incidents, rate) {
-  const incidentCount = incidents.reduce((total, row) => total + Number(row.incident_count || 0), 0);
+function renderAtGlance(maintenance, incidents, rate, openIncidentCount = null) {
+  const incidentCount = openIncidentCount ?? incidents.reduce((total, row) => total + Number(row.incident_count || 0), 0);
   const urgentMaintenance = sortMaintenanceByUrgency(maintenance)
     .filter((item) => ["due", "soon", "no_history"].includes(item.status));
   const nextService = sortMaintenanceByUrgency(maintenance)[0];
@@ -816,6 +818,14 @@ function applyScheduleUpdate(updatedItem) {
   renderDashboard();
 }
 
+function applyIncidentUpdate(updatedIncident) {
+  if (!updatedIncident || !state.serviceModule?.incidents) return;
+  state.serviceModule.incidents = state.serviceModule.incidents.map((item) => (
+    item.id === updatedIncident.id ? { ...item, ...updatedIncident } : item
+  ));
+  renderDashboard();
+}
+
 function populateHistoryCategoryFilter(records) {
   const current = els.historyCategory.value;
   const categories = [...new Set(records.map((record) => record.category).filter(Boolean))].sort();
@@ -1091,6 +1101,31 @@ async function resetScheduleCompletion(id) {
   await loadServiceHistory({ force: true });
 }
 
+async function saveIncidentResolution(id, isResolved) {
+  const incident = (state.serviceModule?.incidents || []).find((row) => row.id === id);
+  if (!incident) return;
+  const notesField = els.incidentSummary.querySelector(`[data-incident-resolution="${CSS.escape(id)}"]`);
+  const resolutionNotes = notesField?.value?.trim() || null;
+  if (isResolved && !resolutionNotes) {
+    throw new Error("Add a short resolution note before marking this resolved.");
+  }
+
+  setStatus(els.serviceHistoryStatus, isResolved ? "Marking incident resolved..." : "Reopening incident...");
+  const updatedIncident = await serviceFetch("vehicle_service_admin?action=resolve_incident", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id,
+      is_resolved: isResolved,
+      resolution_notes: resolutionNotes,
+      resolved_by: state.session?.user?.email || null,
+    }),
+  });
+  applyIncidentUpdate(updatedIncident);
+  setStatus(els.serviceHistoryStatus, isResolved ? "Incident marked resolved." : "Incident reopened.");
+  await loadServiceHistory({ force: true });
+}
+
 async function saveService() {
   const vehicleId = selectedVehicleId();
   const serviceName = els.serviceName.value;
@@ -1153,7 +1188,11 @@ function renderIncidentSummary(incidents, incidentDetails = []) {
   }
 
   if (incidentDetails.length) {
-    const sortedDetails = [...incidentDetails].sort((a, b) => new Date(b.created_at || b.log?.created_at) - new Date(a.created_at || a.log?.created_at));
+    const sortedDetails = [...incidentDetails].sort((a, b) => {
+      const statusDelta = Number(Boolean(a.is_resolved)) - Number(Boolean(b.is_resolved));
+      if (statusDelta) return statusDelta;
+      return new Date(b.created_at || b.log?.created_at) - new Date(a.created_at || a.log?.created_at);
+    });
     const visibleDetails = state.expanded.incidents ? sortedDetails : sortedDetails.slice(0, 4);
     els.toggleIncidentsBtn.hidden = sortedDetails.length <= 4;
     els.toggleIncidentsBtn.textContent = state.expanded.incidents ? "Show Less" : "View All Incidents";
@@ -1164,14 +1203,25 @@ function renderIncidentSummary(incidents, incidentDetails = []) {
           const description = incidentText(row, ["incident_description", "description", "details", "notes"]);
           const location = incidentText(row, ["incident_location", "location"]);
           const policeReport = incidentText(row, ["police_report_number", "report_number"]);
+          const resolved = Boolean(row.is_resolved);
           return `
             <article class="incident-row incident-detail-row">
               <div>
-                <strong>${escapeHtml(row.incident_type || "Incident")}</strong>
+                <div class="incident-title-row">
+                  <strong>${escapeHtml(row.incident_type || "Incident")}</strong>
+                  <span class="pill ${resolved ? "ok" : "due"}">${resolved ? "Resolved" : "Open"}</span>
+                </div>
                 <span>${escapeHtml(row.severity || "info")} - ${formatDateTime(row.created_at || log.created_at)}</span>
                 <small>${escapeHtml([log.employee_name, log.mileage ? formatMileage(log.mileage) : "", location].filter(Boolean).join(" - "))}</small>
                 ${description ? `<p>${escapeHtml(description)}</p>` : ""}
                 ${policeReport ? `<small>Police/report #: ${escapeHtml(policeReport)}</small>` : ""}
+                ${resolved && row.resolved_at ? `<small>Resolved ${formatDateTime(row.resolved_at)}${row.resolved_by ? ` by ${escapeHtml(row.resolved_by)}` : ""}</small>` : ""}
+                <label class="incident-resolution-label" for="incidentResolution-${escapeHtml(row.id)}">Resolution notes</label>
+                <textarea id="incidentResolution-${escapeHtml(row.id)}" data-incident-resolution="${escapeHtml(row.id)}" placeholder="What fixed it? Where is the tire/car now?">${escapeHtml(row.resolution_notes || "")}</textarea>
+                <div class="incident-actions">
+                  <button class="secondary compact" data-resolve-incident="${escapeHtml(row.id)}" data-resolved="true" type="button">${resolved ? "Update Resolution" : "Mark Resolved"}</button>
+                  ${resolved ? `<button class="secondary compact" data-resolve-incident="${escapeHtml(row.id)}" data-resolved="false" type="button">Reopen</button>` : ""}
+                </div>
               </div>
             </article>
           `;
@@ -1332,6 +1382,13 @@ els.historyScheduleRows.addEventListener("click", (event) => {
     resetScheduleCompletion(resetButton.dataset.resetSchedule)
       .catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
   }
+});
+
+els.incidentSummary.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-resolve-incident]");
+  if (!button) return;
+  saveIncidentResolution(button.dataset.resolveIncident, button.dataset.resolved === "true")
+    .catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
 });
 
 els.scheduleEditForm.addEventListener("submit", (event) => {

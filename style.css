@@ -658,10 +658,33 @@ th {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.incident-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .incident-detail-row p {
   margin-top: 8px;
   color: #344054;
   font-size: 13px;
+}
+
+.incident-resolution-label {
+  margin-top: 12px;
+}
+
+.incident-detail-row textarea {
+  min-height: 76px;
+  margin-top: 4px;
+}
+
+.incident-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .services-panel {

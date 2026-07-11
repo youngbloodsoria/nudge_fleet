@@ -300,6 +300,24 @@ async function resetMaintenanceSchedule(request: Request) {
   return updated?.[0] ?? updated;
 }
 
+async function resolveIncident(request: Request) {
+  const body = await request.json();
+  if (!body.id) throw new Error("Incident id is required.");
+
+  const isResolved = body.is_resolved !== false;
+  const updated = await rest(`vehicle_incidents?id=eq.${body.id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({
+      is_resolved: isResolved,
+      resolution_notes: body.resolution_notes || null,
+      resolved_by: isResolved ? body.resolved_by || null : null,
+      resolved_at: isResolved ? new Date().toISOString() : null,
+    }),
+  });
+  return updated?.[0] ?? updated;
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -325,6 +343,9 @@ Deno.serve(async (request) => {
       }
       if (url.searchParams.get("action") === "reset_schedule") {
         return json(200, { ok: true, data: await resetMaintenanceSchedule(request) });
+      }
+      if (url.searchParams.get("action") === "resolve_incident") {
+        return json(200, { ok: true, data: await resolveIncident(request) });
       }
       return json(200, { ok: true, data: await updateRecord(request) });
     }
