@@ -328,6 +328,13 @@ function daysRemaining(item) {
   return Math.ceil((new Date(`${item.due_date}T00:00:00`) - new Date()) / 86400000);
 }
 
+function dueTargetLabel(item) {
+  return [
+    item.due_mileage ? `Due at ${formatMileage(item.due_mileage)}` : "",
+    item.due_date ? formatDate(item.due_date) : "",
+  ].filter(Boolean).join(" / ") || "Next due not set";
+}
+
 async function initialize() {
   const config = await loadAppConfig();
   state.config = config;
@@ -542,6 +549,7 @@ function renderMaintenanceCards(maintenance, latest, rate) {
         <div>
           <strong>${escapeHtml(item.service_name || "Service")}</strong>
           <span>${escapeHtml(interval)}</span>
+          <small>Next: ${escapeHtml(dueTargetLabel(item))}</small>
           <small>Forecast: ${escapeHtml(prediction.label)}</small>
         </div>
         <div>
@@ -888,7 +896,7 @@ function renderHistorySchedule(schedule) {
         <span class="pill ${statusClass}">${escapeHtml(String(item.status || "ok").replace("_", " "))}</span>
         <div class="schedule-actions">
           <button class="secondary compact" data-edit-schedule="${item.id}" type="button">${item.status === "needs_setup" ? "Set Up" : "Edit Schedule"}</button>
-          <button class="secondary compact" data-mark-complete="${item.id}" type="button">${hasCompletion ? "Update Done" : "Mark Complete"}</button>
+          <button class="secondary compact" data-mark-complete="${item.id}" type="button">${hasCompletion ? "Update Done" : "Resolve / Mark Done"}</button>
           ${hasCompletion ? `<button class="secondary compact" data-reset-schedule="${item.id}" type="button">Undo</button>` : ""}
         </div>
       </article>
@@ -974,7 +982,7 @@ async function markScheduleComplete(id) {
       last_completed_mileage: completion.mileage,
       last_completed_date: completion.date,
       current_mileage: selectedVehicleMileage() || null,
-      notes: item.notes,
+      notes: completion.notes,
     }),
   });
   applyScheduleUpdate(updatedItem);
@@ -1022,10 +1030,13 @@ function promptScheduleCompletion(item) {
   if (date.cancelled) return null;
   const mileage = promptNumber(`Mileage when ${item.task_name} was completed`, defaultMileage);
   if (mileage.cancelled) return null;
+  const notes = window.prompt(`Resolution notes for ${item.task_name}`, item.notes || `${item.task_name} completed.`);
+  if (notes === null) return null;
 
   return {
     date: date.value,
     mileage: mileage.value,
+    notes: notes.trim() || null,
   };
 }
 
