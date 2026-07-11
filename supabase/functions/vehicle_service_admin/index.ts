@@ -88,19 +88,30 @@ async function getVehicleId(url: URL) {
 async function readServiceModule(request: Request) {
   const url = new URL(request.url);
   const vehicleId = await getVehicleId(url);
-  if (!vehicleId) return { vehicle: null, records: [], schedule: [], documents: [], totals: {} };
+  if (!vehicleId) return { vehicle: null, records: [], schedule: [], documents: [], incidents: [], totals: {} };
 
   const [
     vehicles,
     records,
     schedule,
     documents,
+    logs,
   ] = await Promise.all([
     rest(`vehicles?select=*&id=eq.${vehicleId}&limit=1`),
     rest(`vehicle_service_records?select=*&vehicle_id=eq.${vehicleId}&order=service_date.desc,mileage.desc`),
     rest(`vehicle_maintenance_schedule?select=*&vehicle_id=eq.${vehicleId}&order=status.desc,next_due_mileage.asc,task_name.asc`),
     rest(`vehicle_service_documents?select=*&vehicle_id=eq.${vehicleId}&order=uploaded_at.desc`),
+    rest(`vehicle_logs?select=id,vehicle_id,log_type,employee_name,mileage,notes,created_at&vehicle_id=eq.${vehicleId}&order=created_at.desc&limit=200`),
   ]);
+  const logIds = logs.map((log: Record<string, string>) => log.id).filter(Boolean);
+  const incidents = logIds.length
+    ? await rest(`vehicle_incidents?select=*&log_id=in.(${logIds.join(",")})&order=created_at.desc`)
+    : [];
+  const logsById = new Map(logs.map((log: Record<string, unknown>) => [log.id, log]));
+  const incidentDetails = incidents.map((incident: Record<string, unknown>) => ({
+    ...incident,
+    log: logsById.get(incident.log_id),
+  }));
 
   const totals = records.reduce((acc: Record<string, number>, record: Record<string, number | null>) => {
     acc.customer_paid += Number(record.customer_paid || 0);
@@ -122,6 +133,7 @@ async function readServiceModule(request: Request) {
     records,
     schedule,
     documents,
+    incidents: incidentDetails,
     totals,
   };
 }
@@ -194,6 +206,7 @@ async function markMaintenanceComplete(request: Request) {
 
   const lastCompletedMileage = body.last_completed_mileage === "" ? null : Number(body.last_completed_mileage);
   const lastCompletedDate = body.last_completed_date || new Date().toISOString().slice(0, 10);
+  const currentMileage = optionalNumber(body.current_mileage);
   const nextDueMileage = body.interval_miles && lastCompletedMileage
     ? lastCompletedMileage + Number(body.interval_miles)
     : null;
@@ -209,7 +222,7 @@ async function markMaintenanceComplete(request: Request) {
       last_completed_date: lastCompletedDate,
       next_due_mileage: nextDueMileage,
       next_due_date: nextDueDate,
-      status: "ok",
+      status: scheduleStatus(nextDueMileage, nextDueDate, currentMileage),
       notes: body.notes,
     }),
   });

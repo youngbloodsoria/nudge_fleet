@@ -427,6 +427,7 @@ function renderDashboard() {
   const maxDailyMiles = daily.length ? Math.max(...daily.map((row) => row.miles)) : 0;
   const serviceModuleMatches = state.serviceModule?.vehicle?.id === vehicleId;
   const serviceRecords = serviceModuleMatches ? state.serviceModule?.records || [] : [];
+  const incidentDetails = serviceModuleMatches ? state.serviceModule?.incidents || [] : [];
   const activeMaintenance = serviceModuleMatches ? activeMaintenanceItems(maintenance) : maintenance.map(normalizeMaintenanceItem);
 
   renderCurrentStatus(latest);
@@ -440,7 +441,7 @@ function renderDashboard() {
     serviceRecords,
     serviceModuleMatches ? "No service records returned from Supabase." : "Loading service records...",
   );
-  renderIncidentSummary(incidents);
+  renderIncidentSummary(incidents, incidentDetails);
   renderRecent(logs);
   if (!serviceModuleMatches && !state.loadingServiceHistory) {
     loadServiceHistory().catch((error) => setStatus(els.serviceHistoryStatus, error.message, true));
@@ -972,6 +973,7 @@ async function markScheduleComplete(id) {
       interval_months: item.interval_months,
       last_completed_mileage: completion.mileage,
       last_completed_date: completion.date,
+      current_mileage: selectedVehicleMileage() || null,
       notes: item.notes,
     }),
   });
@@ -1120,8 +1122,12 @@ async function saveService() {
   closeServiceModal();
 }
 
-function renderIncidentSummary(incidents) {
-  const incidentCount = incidents.reduce((total, row) => total + Number(row.incident_count || 0), 0);
+function incidentText(row, keys) {
+  return keys.map((key) => row[key]).find((value) => value !== null && value !== undefined && value !== "") || "";
+}
+
+function renderIncidentSummary(incidents, incidentDetails = []) {
+  const incidentCount = incidentDetails.length || incidents.reduce((total, row) => total + Number(row.incident_count || 0), 0);
   if (!incidentCount) {
     els.toggleIncidentsBtn.hidden = true;
     els.incidentSummary.innerHTML = `
@@ -1135,6 +1141,35 @@ function renderIncidentSummary(incidents) {
           <span><strong>0</strong><small>Low</small></span>
           <span><strong>0</strong><small>Info</small></span>
         </div>
+      </div>
+    `;
+    return;
+  }
+
+  if (incidentDetails.length) {
+    const sortedDetails = [...incidentDetails].sort((a, b) => new Date(b.created_at || b.log?.created_at) - new Date(a.created_at || a.log?.created_at));
+    const visibleDetails = state.expanded.incidents ? sortedDetails : sortedDetails.slice(0, 4);
+    els.toggleIncidentsBtn.hidden = sortedDetails.length <= 4;
+    els.toggleIncidentsBtn.textContent = state.expanded.incidents ? "Show Less" : "View All Incidents";
+    els.incidentSummary.innerHTML = `
+      <div class="incident-counts">
+        ${visibleDetails.map((row) => {
+          const log = row.log || {};
+          const description = incidentText(row, ["incident_description", "description", "details", "notes"]);
+          const location = incidentText(row, ["incident_location", "location"]);
+          const policeReport = incidentText(row, ["police_report_number", "report_number"]);
+          return `
+            <article class="incident-row incident-detail-row">
+              <div>
+                <strong>${escapeHtml(row.incident_type || "Incident")}</strong>
+                <span>${escapeHtml(row.severity || "info")} - ${formatDateTime(row.created_at || log.created_at)}</span>
+                <small>${escapeHtml([log.employee_name, log.mileage ? formatMileage(log.mileage) : "", location].filter(Boolean).join(" - "))}</small>
+                ${description ? `<p>${escapeHtml(description)}</p>` : ""}
+                ${policeReport ? `<small>Police/report #: ${escapeHtml(policeReport)}</small>` : ""}
+              </div>
+            </article>
+          `;
+        }).join("")}
       </div>
     `;
     return;

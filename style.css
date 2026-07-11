@@ -654,6 +654,16 @@ th {
   color: var(--muted);
 }
 
+.incident-detail-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.incident-detail-row p {
+  margin-top: 8px;
+  color: #344054;
+  font-size: 13px;
+}
+
 .services-panel {
   margin-bottom: 18px;
 }
