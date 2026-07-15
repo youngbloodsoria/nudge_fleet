@@ -85,10 +85,11 @@ h2 {
 
 .brand img {
   width: 68px;
-  height: auto;
-  background: #fff;
+  height: 68px;
+  object-fit: cover;
+  background: #020512;
   border-radius: 8px;
-  padding: 4px;
+  padding: 0;
   flex: 0 0 auto;
 }
 
@@ -916,9 +917,10 @@ th {
 }
 
 .logo-wrap img {
-  max-width: 160px;
-  width: 100%;
-  height: auto;
+  width: 112px;
+  height: 112px;
+  object-fit: cover;
+  border-radius: 18px;
 }
 
 .driver-card h1 {
