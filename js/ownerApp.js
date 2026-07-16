@@ -166,6 +166,19 @@ function formatDateTime(value) {
   });
 }
 
+function formatStoredLogDateTime(value) {
+  if (!value) return "-";
+  const raw = String(value);
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/);
+  if (!match) return formatDateTime(value);
+  const [, year, month, day, hour, minute] = match;
+  const monthName = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(month) - 1];
+  const hourNumber = Number(hour);
+  const displayHour = hourNumber % 12 || 12;
+  const amPm = hourNumber >= 12 ? "PM" : "AM";
+  return `${monthName} ${Number(day)}, ${year}, ${displayHour}:${minute} ${amPm} MT`;
+}
+
 function formatShortDate(value) {
   if (!value) return "-";
   const date = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -184,6 +197,11 @@ function localDateKey(value = new Date()) {
   }).formatToParts(date);
   const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${lookup.year}-${lookup.month}-${lookup.day}`;
+}
+
+function storedLogDateKey(value) {
+  const match = String(value || "").match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : localDateKey(value);
 }
 
 function rangeDays() {
@@ -303,7 +321,7 @@ function sortedMileageLogs(logs) {
 function dailyMileage(logs) {
   const byDate = new Map();
   mileageDeltas(logs).forEach((row) => {
-    const key = localDateKey(row.created_at);
+    const key = storedLogDateKey(row.created_at);
     byDate.set(key, (byDate.get(key) || 0) + row.delta);
   });
   return [...byDate.entries()]
@@ -507,7 +525,7 @@ function renderCurrentStatus(latest) {
   els.currentStatusBadge.textContent = status.label;
   els.currentStatusDriver.textContent = latest.last_employee_name || "-";
   els.currentStatusAction.textContent = status.actionLabel === "-" ? "-" : status.actionLabel;
-  els.currentStatusDate.textContent = formatDateTime(latest.last_seen_at);
+  els.currentStatusDate.textContent = formatStoredLogDateTime(latest.last_seen_at);
   els.currentStatusMileage.textContent = formatMileage(latest.last_mileage);
 }
 
@@ -1232,7 +1250,7 @@ function renderIncidentSummary(incidents, incidentDetails = []) {
                   <strong>${escapeHtml(row.incident_type || "Incident")}</strong>
                   <span class="pill ${resolved ? "ok" : "due"}">${resolved ? "Resolved" : "Open"}</span>
                 </div>
-                <span>${escapeHtml(row.severity || "info")} - ${formatDateTime(row.created_at || log.created_at)}</span>
+                <span>${escapeHtml(row.severity || "info")} - ${formatStoredLogDateTime(row.created_at || log.created_at)}</span>
                 <small>${escapeHtml([log.employee_name, log.mileage ? formatMileage(log.mileage) : "", location].filter(Boolean).join(" - "))}</small>
                 ${description ? `<p>${escapeHtml(description)}</p>` : ""}
                 ${policeReport ? `<small>Police/report #: ${escapeHtml(policeReport)}</small>` : ""}
@@ -1278,7 +1296,7 @@ function renderRecent(logs) {
     const incident = row.incident_count || row.incident_type || row.severity ? "Yes" : "-";
     return `
       <tr>
-        <td data-label="Date / Time">${formatDateTime(row.created_at)}</td>
+        <td data-label="Date / Time">${formatStoredLogDateTime(row.created_at)}</td>
         <td data-label="Action"><span class="pill ${actionClass}">${escapeHtml(row.log_type || "-")}</span></td>
         <td data-label="Driver">${escapeHtml(row.employee_name || "-")}</td>
         <td data-label="Mileage">${formatMileage(row.mileage)}</td>
