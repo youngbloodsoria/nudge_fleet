@@ -84,12 +84,9 @@ h2 {
 }
 
 .brand img {
-  width: 68px;
-  height: 68px;
-  object-fit: cover;
-  background: #020512;
-  border-radius: 8px;
-  padding: 0;
+  width: 82px;
+  height: 54px;
+  object-fit: contain;
   flex: 0 0 auto;
 }
 
@@ -917,10 +914,9 @@ th {
 }
 
 .logo-wrap img {
-  width: 112px;
-  height: 112px;
-  object-fit: cover;
-  border-radius: 18px;
+  width: 132px;
+  height: 86px;
+  object-fit: contain;
 }
 
 .driver-card h1 {
@@ -1020,6 +1016,7 @@ th {
 
   .brand img {
     width: 58px;
+    height: 40px;
   }
 
   .dashboard-actions {

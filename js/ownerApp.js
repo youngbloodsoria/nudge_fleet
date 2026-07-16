@@ -6,6 +6,7 @@ const VISIBLE_LIMIT = {
   logs: 5,
   services: 3,
 };
+const APP_TIME_ZONE = "America/Denver";
 
 const els = {
   configWarning: document.getElementById("configWarning"),
@@ -146,7 +147,10 @@ function formatMileage(value) {
 
 function formatDate(value) {
   if (!value) return "-";
-  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  const date = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T12:00:00Z`)
+    : new Date(value);
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: APP_TIME_ZONE });
 }
 
 function formatDateTime(value) {
@@ -157,12 +161,29 @@ function formatDateTime(value) {
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: APP_TIME_ZONE,
+    timeZoneName: "short",
   });
 }
 
 function formatShortDate(value) {
   if (!value) return "-";
-  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const date = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T12:00:00Z`)
+    : new Date(value);
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: APP_TIME_ZONE });
+}
+
+function localDateKey(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: APP_TIME_ZONE,
+  }).formatToParts(date);
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${lookup.year}-${lookup.month}-${lookup.day}`;
 }
 
 function rangeDays() {
@@ -183,7 +204,7 @@ function selectedVehicleMileage() {
 }
 
 function todayValue() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateKey();
 }
 
 function cardsOrEmpty(cards, message = "No data yet.") {
@@ -282,11 +303,11 @@ function sortedMileageLogs(logs) {
 function dailyMileage(logs) {
   const byDate = new Map();
   mileageDeltas(logs).forEach((row) => {
-    const key = row.created_at.slice(0, 10);
+    const key = localDateKey(row.created_at);
     byDate.set(key, (byDate.get(key) || 0) + row.delta);
   });
   return [...byDate.entries()]
-    .map(([date, miles]) => ({ date, miles, at: new Date(`${date}T00:00:00`) }))
+    .map(([date, miles]) => ({ date, miles, at: new Date(`${date}T12:00:00Z`) }))
     .sort((a, b) => a.at - b.at);
 }
 
