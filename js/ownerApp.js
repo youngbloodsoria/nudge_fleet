@@ -167,16 +167,7 @@ function formatDateTime(value) {
 }
 
 function formatStoredLogDateTime(value) {
-  if (!value) return "-";
-  const raw = String(value);
-  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/);
-  if (!match) return formatDateTime(value);
-  const [, year, month, day, hour, minute] = match;
-  const monthName = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(month) - 1];
-  const hourNumber = Number(hour);
-  const displayHour = hourNumber % 12 || 12;
-  const amPm = hourNumber >= 12 ? "PM" : "AM";
-  return `${monthName} ${Number(day)}, ${year}, ${displayHour}:${minute} ${amPm} MT`;
+  return formatDateTime(value);
 }
 
 function formatShortDate(value) {
@@ -200,8 +191,7 @@ function localDateKey(value = new Date()) {
 }
 
 function storedLogDateKey(value) {
-  const match = String(value || "").match(/^(\d{4}-\d{2}-\d{2})/);
-  return match ? match[1] : localDateKey(value);
+  return localDateKey(value);
 }
 
 function rangeDays() {
