@@ -34,10 +34,12 @@
     <input id="employee_name" type="text" placeholder="First + last" required />
 
     <label>Photos (4–6 recommended: front, back, both sides, odometer)</label>
-<p class="tiny">
-  <b>Please upload extra photos only if there’s damage. If damage is found by next driver and there is no documentation, then the last driver will be found at fault.</b> 
-</p>
+    <label for="photos">Camera</label>
     <input id="photos" type="file" accept="image/*" capture="environment" multiple />
+    <label for="photoLibrary">Photo library</label>
+    <input id="photoLibrary" type="file" accept="image/*" multiple />
+    <p id="photoCount" class="tiny" aria-live="polite">0 photos selected</p>
+    <div id="photoPreviews" class="photo-previews"></div>
 
     <label>Notes (optional)</label>
     <textarea id="notes" placeholder="Damage, gas level, issues, etc."></textarea>
@@ -94,6 +96,43 @@
 
   const statusEl = document.getElementById("status");
   const submitBtn = document.getElementById("submitBtn");
+  const photoInputs = [document.getElementById("photos"), document.getElementById("photoLibrary")];
+  const photoPreviews = document.getElementById("photoPreviews");
+  const photoCount = document.getElementById("photoCount");
+  let selectedPhotos = [];
+  let uploading = false;
+
+  function renderPhotos() {
+    photoCount.textContent = `${selectedPhotos.length} photo${selectedPhotos.length === 1 ? "" : "s"} selected`;
+    photoPreviews.replaceChildren();
+    selectedPhotos.forEach((photo, index) => {
+      const tile = document.createElement("div");
+      tile.className = "photo-preview";
+      const image = document.createElement("img");
+      image.src = photo.url;
+      image.alt = `Selected photo ${index + 1}`;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "×";
+      remove.title = `Remove photo ${index + 1}`;
+      remove.setAttribute("aria-label", remove.title);
+      remove.disabled = uploading;
+      remove.addEventListener("click", () => {
+        URL.revokeObjectURL(photo.url);
+        selectedPhotos = selectedPhotos.filter(item => item !== photo);
+        renderPhotos();
+      });
+      tile.append(image, remove);
+      photoPreviews.append(tile);
+    });
+  }
+  photoInputs.forEach(input => input.addEventListener("change", () => {
+    for (const file of input.files || []) {
+      selectedPhotos.push({ file, url: URL.createObjectURL(file) });
+    }
+    input.value = "";
+    renderPhotos();
+  }));
 
   function setStatus(msg, cls="") {
     statusEl.className = "tiny " + cls;
@@ -114,18 +153,20 @@
   submitBtn.addEventListener("click", async () => {
     try {
       submitBtn.disabled = true;
+      uploading = true;
+      photoInputs.forEach(input => { input.disabled = true; });
+      renderPhotos();
       setStatus("Uploading…", "");
 
       const log_type = document.getElementById("log_type").value;
       const mileage = document.getElementById("mileage").value;
       const employee_name = document.getElementById("employee_name").value.trim();
       const notes = document.getElementById("notes").value.trim();
-      const photosInput = document.getElementById("photos");
 
       if (!employee_name) throw new Error("Name is required.");
       if (mileage === "" || Number(mileage) < 0) throw new Error("Mileage must be a non-negative number.");
 
-      const files = Array.from(photosInput.files || []);
+      const files = selectedPhotos.map(photo => photo.file);
       if (files.length < 1) throw new Error("At least 1 photo required (odometer).");
 
       const form = new FormData();
@@ -163,7 +204,9 @@
       document.getElementById("mileage").value = "";
       document.getElementById("employee_name").value = "";
       document.getElementById("notes").value = "";
-      photosInput.value = "";
+      selectedPhotos.forEach(photo => URL.revokeObjectURL(photo.url));
+      selectedPhotos = [];
+      renderPhotos();
       hasIncident.checked = false;
       incidentFields.style.display = "none";
       document.getElementById("incident_description").value = "";
@@ -174,7 +217,10 @@
     } catch (e) {
       setStatus(e.message || "Something broke. Try again.", "bad");
     } finally {
-      submitBtn.disabled = false;
+      uploading = false;
+      photoInputs.forEach(input => { input.disabled = false; });
+      renderPhotos();
+      submitBtn.disabled = !vehicle_id || !k;
     }
   });
 </script>
